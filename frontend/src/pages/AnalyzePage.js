@@ -1,0 +1,136 @@
+import React, { useEffect, useState } from "react";
+
+export default function AnalyzePage() {
+    const [primerFiles, setPrimerFiles] = useState([]);
+    const [referenceFiles, setReferenceFiles] = useState([]);
+    const [primerFile, setPrimerFile] = useState("");
+    const [referenceFile, setReferenceFile] = useState("");
+    const [result, setResult] = useState("");
+    const [loading, setLoading] = useState("");
+
+    const token = localStorage.getItem("token");
+
+    useEffect(() => {
+        const fetchFiles = async () => {
+            try {
+                const res = await fetch("http://localhost:5000/files", {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+
+                if (!res.ok) {
+                    const errText = await res.text(); // fallback in case it's HTML or text
+                    console.error("Failed to fetch files:", errText);
+                    return;
+                }
+
+                const data = await res.json();
+                setPrimerFiles(data.primer || []);
+                setReferenceFiles(data.genomic || []);
+            } catch (err) {
+                console.error("Error fetching files:", err);
+            }
+        };
+
+        if (token) {
+            fetchFiles();
+        }
+    }, [token]);
+
+    const handleAnalyze = async () => {
+        if (!primerFile || !referenceFile) {
+            alert("Please select both a primer file and a reference file.");
+            return;
+        }
+
+        setLoading(true);
+        setResult("");
+
+        try {
+            const res = await fetch("http://localhost:5000/analyze", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    primerFileId: primerFile,
+                    referenceFileId: referenceFile,
+                }),
+            });
+
+            if (!res.ok) {
+                const errorText = await res.text();
+                throw new Error(errorText || "Analysis request failed");
+            }
+
+            const data = await res.json();
+            setResult(data.result);
+        } catch (err) {
+            setResult(`Error: ${err.message}`);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+return (
+    <div>
+        <h2>Run FASTA Analysis</h2>
+        {!token ? (
+            <p>Please log in</p>
+        ) : (
+            <>
+                <div>
+                    <label>Primer File:</label>
+                    <select
+                        value={primerFile}
+                        onChange={(e) => setPrimerFile(e.target.value)}
+                    >
+                        <option value="">Select Primer File</option>
+                        {primerFiles.map((file) => (
+                            <option key={file.id} value={file.id}>
+                                {file.filename}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                <div style={{ marginTop: "15px" }}>
+                    <label>Reference File:</label>
+                    <select
+                        value={referenceFile}
+                        onChange={(e) => setReferenceFile(e.target.value)}
+                    >
+                        <option value="">Select Reference File</option>
+                        {referenceFiles.map((file) => (
+                            <option key={file.id} value={file.id}>
+                                {file.filename}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                <button
+                    onClick={handleAnalyze}
+                    disabled={loading}
+                    style={{ marginTop: "20px" }}
+                >
+                    {loading ? "Analyzing..." : "Analyze"}
+                </button>
+
+                {result && (
+                    <pre
+                        style={{
+                            marginTop: "20px",
+                            background: "#f4f4f4",
+                            padding: "10px",
+                            whiteSpace: "pre-wrap",
+                        }}
+                    >
+                        {result}
+                    </pre>
+                )}
+            </>
+        )}
+    </div>
+    );
+}

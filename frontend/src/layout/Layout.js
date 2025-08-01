@@ -1,0 +1,76 @@
+import React, { useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Home, Upload, ActivitySquare } from "lucide-react";
+import { jwtDecode } from "jwt-decode";
+import "./Layout.css";
+import LoginModal from "../components/LoginModal";
+
+export default function Layout({ children }) {
+    const [showLoginModal, setShowLoginModal] = useState(false);
+
+    const location = useLocation();
+    const currentPath = location.pathname;
+
+    const token = localStorage.getItem("token");
+
+    let username = "";
+    if (token) {
+        try {
+            const decoded = jwtDecode(token);
+            username = decoded.username;
+        } catch (e) {
+            console.error("Invalid token:", e);
+        }
+    }
+
+    const navigate = useNavigate();
+
+    const handleLogout = () => {
+        localStorage.removeItem("token");
+        setShowLoginModal(false);
+        navigate("/");
+    };
+
+    return (
+        <div className="layout">
+            <header className="banner">
+                <div className="banner-title">LieSeq</div>
+                <div className="banner-right">
+                    {username && <span className="username">{username}</span>}
+                    {token ? (
+                        <button onClick={handleLogout} className="banner-btn">Logout</button>
+                    ) : (
+                        <button onClick={() => setShowLoginModal(true)} className="banner-btn">Login</button>
+                    )}
+                </div>
+            </header>
+
+            <div className="main-content">
+                <nav className="sidebar">
+                    <Link to="/" className={`sidebar-link ${currentPath === "/" ? "active" : ""}`}>
+                        <Home size={18} style={{ marginRight: "8px" }} />
+                        Home
+                    </Link>
+                    <Link to="/upload" className={`sidebar-link ${currentPath === "/upload" ? "active" : ""}`}>
+                        <Upload size={18} style={{ marginRight: "8px" }} />
+                        Upload
+                    </Link>
+                    <Link to="/analyze" className={`sidebar-link ${currentPath === "/analyze" ? "active" : ""}`}>
+                        <ActivitySquare size={18} style={{ marginRight: "8px" }} />
+                        Analyze
+                    </Link>
+                </nav>
+
+                <main className="content-area">
+                    {children}
+                </main>
+            </div>
+            {showLoginModal && (
+                <LoginModal
+                    onClose={() => setShowLoginModal(false)}
+                    onLoginSuccess={() => navigate("/")}
+                />
+            )}
+        </div>
+    );
+}

@@ -1,0 +1,36 @@
+# Node.js
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo 
+*.pyd 
+.Python 
+*.env 
+
+# Logs
+logs/
+*.log
+
+# Uploads or temporary file storage
+uploads/
+tmp/
+*.tmp
+
+# Keep environment variables out of version control
+.env
+
+# Prisma
+/generated/
+
+# VS Code or IDE-specific
+.vscode/
+.idea/
+
+# SQL
+db.sqlite
