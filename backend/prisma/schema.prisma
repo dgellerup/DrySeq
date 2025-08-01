@@ -6,7 +6,6 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
 }
 
 datasource db {
@@ -15,40 +14,69 @@ datasource db {
 }
 
 model User {
-  id          Int       @id @default(autoincrement())
-  username    String    @unique
-  password    String
-  files       File[]
+  id                Int       @id @default(autoincrement())
+  username          String    @unique
+  password          String
+  files             File[]
+  fastaAnalyses     FastaAnalysis[]
+  fastqAnalyses     FastqAnalysis[]
+}
+
+enum FileCategory {
+  GENOMIC
+  PRIMER 
+  FASTQ 
 }
 
 model File {
-  id              Int       @id @default(autoincrement())
-  filename        String
-  path            String
-  category        String    // "genomic" or "primer" or "fastq"
-  uploadedAt      DateTime  @default(now())
-  userId          Int
-  user            User      @relation(fields: [userId], references: [id])
-  metadata        Metadata?
-  primerAnalyses  FastaAnalysis[] @relation("PrimerAnalysis")
-  referenceAnalyses   FastaAnalysis[] @relation("ReferenceAnalysis")
+  id                  Int             @id @default(autoincrement())
+  filename            String
+  path                String
+  category            FileCategory
+  uploadedAt          DateTime        @default(now())
+  userId              Int
+  user                User            @relation(fields: [userId], references: [id])
+  metadata            Metadata[]
+
+  // Relations for different analysis types
+  primerAnalyses      FastaAnalysis[] @relation("PrimerFile")
+  referenceAnalyses   FastaAnalysis[] @relation("ReferenceFile")
+  fastqAnalyses       FastqAnalysis[] @relation("FastqFile")
 }
 
 model Metadata {
   id          Int       @id @default(autoincrement())
   file        File      @relation(fields: [fileId], references: [id])
   fileId      Int       @unique
-  content     String    // JSON string or summarized text output
+  key         String
+  value       String
+
+  @@unique([fileId, key])
 }
 
-model fastaAnalysis {
+model FastaAnalysis {
   id              Int       @id @default(autoincrement())
   user            User      @relation(fields: [userId], references: [id])
   userId          Int
-  primerFile      File      @relation("PrimerAnalysis", fields: [primerFileId], references: [id])
+
+  primerFile      File      @relation("PrimerFile", fields: [primerFileId], references: [id])
   primerFileId    Int
-  referenceFile   File      @relation("ReferenceFileId", fields: [referenceFileId], references])
+
+  referenceFile   File      @relation("ReferenceFile", fields: [referenceFileId], references: [id])
   referenceFileId Int
+
+  result          String
+  createdAt       DateTime  @default(now())
+
+  @@unique([userId, primerFileId, referenceFileId]) // prevents duplicate runs
+}
+
+model FastqAnalysis {
+  id              Int       @id @default(autoincrement())
+  user            User      @relation(fields: [userId], references: [id])
+  userId          Int
+  fastqFile       File      @relation("FastqFile", fields: [fastqFileId], references: [id])
+  fastqFileId     Int
   result          String
   createdAt       DateTime  @default(now())
 }
