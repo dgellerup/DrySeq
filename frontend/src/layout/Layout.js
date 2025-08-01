@@ -1,32 +1,39 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Home, Upload, ActivitySquare } from "lucide-react";
 import { jwtDecode } from "jwt-decode";
 import "./Layout.css";
 import LoginModal from "../components/LoginModal";
+import { useAuth } from "../contexts/AuthContext";
 
 export default function Layout({ children }) {
     const [showLoginModal, setShowLoginModal] = useState(false);
+    const [username, setUsername] = useState("");
 
     const location = useLocation();
+    const navigate = useNavigate();
     const currentPath = location.pathname;
 
-    const token = localStorage.getItem("token");
+    const { token, logout } = useAuth();
 
-    let username = "";
-    if (token) {
-        try {
-            const decoded = jwtDecode(token);
-            username = decoded.username;
-        } catch (e) {
-            console.error("Invalid token:", e);
+    useEffect(() => {
+        if (token && typeof token === "string") {
+            try {
+                const decoded = jwtDecode(token);
+                setUsername(decoded.username || "");
+            } catch (e) {
+                console.error("Invalid token:", e);
+                setUsername("");
+                logout();
+            }
+        } else {
+            setUsername("");
         }
-    }
-
-    const navigate = useNavigate();
+    }, [token, logout]);
 
     const handleLogout = () => {
-        localStorage.removeItem("token");
+        logout();
+        setUsername("");
         setShowLoginModal(false);
         navigate("/");
     };

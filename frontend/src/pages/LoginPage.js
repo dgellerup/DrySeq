@@ -1,18 +1,20 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { login } from "../api";
+import { login as loginApi } from "../api";
+import { useAuth } from "../contexts/AuthContext";
 
 export default function LoginPage() {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const navigate = useNavigate();
+    const { login } = useAuth();
 
     const handleLogin = async (e) => {
         e.preventDefault();
-        const res = await login(username, password);
+        const res = await loginApi(username, password);
         const data = await res.json();
         if (res.ok) {
-            localStorage.setItem("token", data.token);
+            login(data.token);
             navigate("/");
         } else {
             alert(data.error);

@@ -1,12 +1,12 @@
 import React, { useState } from "react";
-import { uploadFile } from "../api";
+import { useAuth } from "../contexts/AuthContext";
 
 export default function UploadPage() {
     const [file, setFile] = useState(null);
     const [category, setCategory] = useState("genomic");
     const [message, setMessage] = useState("");
 
-    const token = localStorage.getItem("token");
+    const { token } = useAuth();
 
     const handleUpload = async (e) => {
         e.preventDefault();
@@ -16,14 +16,25 @@ export default function UploadPage() {
         formData.append("file", file);
         formData.append("category", category);
 
-        const res = await fetch("http://localhost:5000/upload", {
+        try {
+          const res = await fetch("http://localhost:5000/upload", {
             method: "POST",
-            headers: { Authorization: `Bearer ${token}`},
-            body: formData
-        });
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            body: formData,
+          });
 
-        const data = await res.json();
-        setMessage(res.ok ? `Uploaded to ${data.category}` : `Error: ${data.error}`);
+          if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(errText);
+          }
+
+          const data = await res.json();
+          setMessage(`Uploaded to ${data.category}`);
+        } catch (err) {
+          setMessage(`Error: ${err.message}`);
+        }
     };
 
     return (

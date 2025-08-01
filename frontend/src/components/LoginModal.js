@@ -1,12 +1,15 @@
 import React, { useState } from "react";
 import "./LoginModal.css";
 import RegisterModal from "./RegisterModal";
+import { useAuth } from "../contexts/AuthContext";
 
 export default function LoginModal({ onClose, onLoginSuccess }) {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [showRegister, setShowRegister] = useState(false);
+
+    const { login: setToken } = useAuth();
 
     const handleLogin = async (e) => {
         e.preventDefault();
@@ -18,7 +21,7 @@ export default function LoginModal({ onClose, onLoginSuccess }) {
 
         const data = await res.json();
         if (res.ok) {
-            localStorage.setItem("token", data.token);
+            setToken(data.token);
             onLoginSuccess();
             onClose();
         } else {
