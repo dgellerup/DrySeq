@@ -144,22 +144,41 @@ app.post("/upload", authenticateToken, upload.single("file"), async (req, res) =
     const { category } = req.body;
     const file = req.file;
     const userId = req.user?.userId;
-
+    
     if (!file) {
         return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    const normalizedName = file.originalname.trim().toLowerCase();
+
+    const disallowed = /\.(exe|sh|js|bat)$/i;
+    if(disallowed.test(normalizedName)) {
+        return res.status(400).json({ error: "Disallowed file type" });
     }
 
     if (!["genomic", "primer"].includes(category)) {
         return res.status(400).json({ error: "Invalid category. Use 'genomic' or 'primer'" });
     }
 
+
+    const existing = await prisma.file.findFirst({
+        where: {
+            filename: normalizedName,
+        },
+    });
+
+    if (existing) {
+        return res.status(400).json({
+            error: `File ${normalizedName} already exists`,
+        });
+    }
+
     // Rename and organize by category
     const targetDir = path.join(__dirname, "uploads", category);
-    const targetPath = path.join(targetDir, file.originalname);
+    const targetPath = path.join(targetDir, normalizedName);
 
-    fs.mkdirSync(targetDir, { recursive: true });
-    fs.renameSync(file.path, targetPath);
-
+    await fs.promises.mkdir(targetDir, { recursive: true });
+    await fs.promises.rename(file.path, targetPath);
 
     try {
         const categoryEnumMap = {
@@ -175,14 +194,14 @@ app.post("/upload", authenticateToken, upload.single("file"), async (req, res) =
         }
         const newFile = await prisma.file.create({
             data: {
-                filename: file.originalname,
+                filename: normalizedName,
                 path: targetPath,
                 category: fileCategory,
                 userId,
             },
         });
 
-        res.json({ message: "Upload saved", fileId: newFile.id, category: newFile.category });
+        res.json({ message: "Upload saved", fileId: newFile.id, filename: newFile.filename, category: newFile.category });
     } catch (err) {
         console.error("Upload error:", err);
         res.status(500).json({ error: "Failed to save file" });
@@ -205,7 +224,15 @@ app.get("/fasta-files", authenticateToken, async (req, res) => {
         },
     });
 
-    res.json(files);
+    const filesWithAnalysis = files.map((file) => {
+        const analysisMeta = file.metadata.find((m) => m.key === "analysis_result");
+        return {
+            ...file,
+            analysisResult: analysisMeta?.value || null,
+        };
+    });
+
+    res.json(filesWithAnalysis);
 });
 
 app.get("/fastq-files", authenticateToken, async (req, res) => {
@@ -229,6 +256,64 @@ app.get("/fastq-files", authenticateToken, async (req, res) => {
 
     res.json(files);
 })
+
+app.post("/analyze-fasta", authenticateToken, async (req, res) => {
+    const { fileId: fastaFileId } = req.body;
+    const userId = req.user?.userId;
+
+    try {
+        const fastaFile = await prisma.file.findFirst({
+                where: { id: fastaFileId, userId },
+        });
+
+        if (!fastaFile) {
+            return res.status(404).json({ error: "FASTA file not found."});
+        }
+
+        const fastaPath = path.join(__dirname, "uploads", fastaFile.category, fastaFile.filename);
+        const scriptPath = path.join(__dirname, "scripts", "process_fasta.py");
+        const venvPython = path.join(__dirname, "venv", "Scripts", "python.exe");
+
+        execFile(venvPython, [scriptPath, fastaPath], async (err, stdout, stderr) => {
+            if (err) {
+                console.error("Python error:", stderr);
+                return res.status(500).json({ error: "Processing failed" });
+            }
+
+            let result;
+            try {
+                result = JSON.parse(stdout.trim());
+            } catch (e) {
+                console.error("Failed to parse JSON from Python script:", stdout);
+                return res.status(500).json({ error: "Invalid analysis result format "});
+            }
+            await Promise.all([
+                prisma.metadata.upsert({
+                    where: { fileId: fastaFile.id },
+                    update: {
+                        key: "analysis_result",
+                        value: `Found ${result.sequence_count} sequences.`,
+                    },
+                    create: {
+                        fileId: fastaFile.id,
+                        key: "analysis_result",
+                        value: `Found ${result.sequence_count} sequences.`,
+                    },
+                }),
+            ]);
+
+            res.json({
+                message: "Analysis complete",
+                "result": {
+                    "sequence_count": result.sequence_count,
+                },
+            });
+        });
+    } catch (err) {
+        console.error("Server error:", err);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
 
 app.post("/analyze", authenticateToken, async (req, res) => {
     const { primerFileId, referenceFileId } = req.body;
@@ -271,54 +356,52 @@ app.post("/analyze", authenticateToken, async (req, res) => {
         const venvPython = path.join(__dirname, "venv", "Scripts", "python.exe");
 
         execFile(venvPython, [scriptPath, primerPath, referencePath], async (err, stdout, stderr) => {
-        if (err) {
-            console.error("Python error:", stderr);
-            return res.status(500).json({ error: "Processing failed" });
-        }
+            if (err) {
+                console.error("Python error:", stderr);
+                return res.status(500).json({ error: "Processing failed" });
+            }
 
-        let result;
-        try {
-            result = JSON.parse(stdout.trim());
-        } catch (e) {
-            console.error("Failed to parse JSON from Python script:", stdout);
-            return res.status(500).json({ error: "Invalid analysis result format "});
-        }
+            let result;
+            try {
+                result = JSON.parse(stdout.trim());
+            } catch (e) {
+                console.error("Failed to parse JSON from Python script:", stdout);
+                return res.status(500).json({ error: "Invalid analysis result format "});
+            }
+            await Promise.all([
+                prisma.metadata.upsert({
+                    where: { fileId: primerFile.id },
+                    update: {
+                        key: "analysis_result",
+                        value: `Found ${result.primer_count} primer sequences.`,
+                    },
+                    create: {
+                        fileId: primerFile.id,
+                        key: "analysis_result",
+                        value: `Found ${result.primer_count} primer sequences.`,
+                    },
+                }),
+                prisma.metadata.upsert({
+                    where: { fileId: referenceFile.id },
+                    update: {
+                        key: "analysis_result",
+                        value: `Found ${result.reference_count} reference sequences.`,
+                    },
+                    create: {
+                        fileId: referenceFile.id,
+                        key: "analysis_result",
+                        value: `Found ${result.reference_count} reference sequences.`,
+                    },
+                }),
+            ]);
 
-        // Optional: store metadata for future queries
-        await Promise.all([
-        prisma.metadata.upsert({
-            where: { fileId: primerFile.id },
-            update: {
-                key: "analysis_result",
-                value: `Found ${result.primer_count} primer sequences.`,
-            },
-            create: {
-                fileId: primerFile.id,
-                key: "analysis_result",
-                value: `Found ${result.primer_count} primer sequences.`,
-            },
-        }),
-        prisma.metadata.upsert({
-            where: { fileId: referenceFile.id },
-            update: {
-                key: "analysis_result",
-                value: `Found ${result.reference_count} reference sequences.`,
-            },
-            create: {
-                fileId: referenceFile.id,
-                key: "analysis_result",
-                value: `Found ${result.reference_count} reference sequences.`,
-            },
-        }),
-        ]);
-
-        res.json({
-            message: "Analysis complete",
-            "result": {
-                "primer_count": result.primer_count,
-                "reference_count": result.primer_count
-            },
-        });
+            res.json({
+                message: "Analysis complete",
+                "result": {
+                    "primer_count": result.primer_count,
+                    "reference_count": result.primer_count
+                },
+            });
         });
     } catch (err) {
         console.error("Server error:", err);
