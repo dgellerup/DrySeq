@@ -42,6 +42,10 @@ export default function FileManagementPage() {
 
     const handleDownload = async (fileId) => {
         try {
+            const file =
+                fastaFiles.find((f) => f.id === fileId) ||
+                fastqFiles.find((f) => f.id === fileId);
+
             const res = await fetch(`http://localhost:5000/download/${fileId}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
@@ -49,7 +53,7 @@ export default function FileManagementPage() {
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = "file.fasta"; // optionally replace with dynamic filename
+            a.download = file.filename; // optionally replace with dynamic filename
             document.body.appendChild(a);
             a.click();
             a.remove();
