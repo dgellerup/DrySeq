@@ -7,41 +7,58 @@ export default function HomePage() {
     const [fastaFiles, setFastaFiles] = useState([]);
     const [fastqFiles, setFastqFiles] = useState([]);
 
-    useEffect(() => {
-        if (!token) return;
-        fetch("http://localhost:5000/fasta-files", {
-            headers: { Authorization: `Bearer ${token}` },
-        })
-            .then((res) => res.json())
-            .then(setFastaFiles)
-            .catch((err) => console.error("Failed to fetch FASTA files:", err));
-    }, [token]);
+    const fetchFastaFiles = async() => {
+        try {
+            const res = await fetch("http://localhost:5000/fasta-files", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const data = await res.json();
+            setFastaFiles(data);
+        } catch (err) {
+            console.error("Failed to fetch FASTA files:", err);
+        }
+    };
+
+    const fetchFastqFiles = async() => {
+        try {
+            const res = await fetch("http://localhost:5000/fastq-files", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const data = await res.json();
+            setFastqFiles(data);
+        } catch (err) {
+             console.error("Failed to fetch FASTQ files:", err);
+        }
+    }
 
     useEffect(() => {
         if (!token) return;
-        fetch("http://localhost:5000/fastq-files", {
-            headers: { Authorization: `Bearer ${token}` },
-        })
-            .then((res) => res.json())
-            .then(setFastqFiles)
-            .catch((err) => console.error("Failed to fetch FASTQ files:", err));
+
+        fetchFastaFiles();
+        fetchFastqFiles();
+
+        // const interval = setInterval(() => {
+        //     fetchFastqFiles();
+        // }, 15000);
+
+        // return () => clearInterval(interval);
     }, [token]);
 
 
     return (
         <div>
             <div>
-                <h2>Welcome to LieSeq</h2>
+                <h2>Welcome to DrySeq</h2>
                 <p>This is your personal sequence analysis dashboard.</p>
                 <p>Please use the sidebar to upload genomic or primer sequences, or to start an analysis.</p>
             </div>
             <div className="p-4">
-              <h2 className="text-xl font-bold mb-4">Uploaded FASTA Files & Analyses</h2>  
+              <h2 className="text-xl font-bold mb-4">Uploaded FASTA Files ({ fastaFiles.length }/6)</h2>  
               <ul className="space-y-4">
                 {fastaFiles.map((file) => (
                     <li key={file.id} className="border p-2 rounded">
                         <div>
-                            <strong>{file.filename}</strong> - {file.category} - {file.analysisResult}
+                            <strong>{file.filename}</strong> - {file.category} - {file.analysisResult || "Processing"}
                         </div>
                         <div className="text-sm text-gray-600">
                             Uploaded: {new Date(file.uploadedAt).toLocaleString()}
@@ -79,8 +96,9 @@ export default function HomePage() {
                 ))}
             </ul>
 
-            <h2 className="text-xl font-bold met-10 mb-4">Generated FASTQ Files</h2>    
+            <h2 className="text-xl font-bold met-10 mb-4">Generated FASTQ Files ({ fastqFiles.length }/3)</h2>    
             <ul className="space-y-4">
+                {fastqFiles.length == 0 && <p>No FASTQ Files Generated Yet</p>}
                 {fastqFiles.map((file) => (
                     <li key={file.id} className="border p-2 rounded">
                         <div><strong>{file.filename}</strong></div>
