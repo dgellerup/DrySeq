@@ -31,12 +31,12 @@ export default function HomePage() {
     return (
         <div>
             <div>
-                <h2>Welcome to LieSeq</h2>
+                <h2>Welcome to DrySeq</h2>
                 <p>This is your personal sequence analysis dashboard.</p>
                 <p>Please use the sidebar to upload genomic or primer sequences, or to start an analysis.</p>
             </div>
             <div className="p-4">
-              <h2 className="text-xl font-bold mb-4">Uploaded FASTA Files & Analyses</h2>  
+              <h2 className="text-xl font-bold mb-4">Uploaded FASTA Files ({ fastaFiles.length }/6)</h2>  
               <ul className="space-y-4">
                 {fastaFiles.map((file) => (
                     <li key={file.id} className="border p-2 rounded">
@@ -79,8 +79,9 @@ export default function HomePage() {
                 ))}
             </ul>
 
-            <h2 className="text-xl font-bold met-10 mb-4">Generated FASTQ Files</h2>    
+            <h2 className="text-xl font-bold met-10 mb-4">Generated FASTQ Files ({ fastqFiles.length }/3)</h2>    
             <ul className="space-y-4">
+                {fastqFiles.length == 0 && <p>No FASTQ Files Generated Yet</p>}
                 {fastqFiles.map((file) => (
                     <li key={file.id} className="border p-2 rounded">
                         <div><strong>{file.filename}</strong></div>
