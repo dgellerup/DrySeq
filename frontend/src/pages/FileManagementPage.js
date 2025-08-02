@@ -1,8 +1,11 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useAuth } from "../contexts/AuthContext"; // assuming token there
 import { toast } from "react-toastify";
+import { Download, Trash2 } from "lucide-react";
 
 import ConfirmDialogModal from "../components/ConfirmDialogModal";
+
+import "./FileTable.css";
 
 export default function FileManagementPage() {
     const { token } = useAuth();
@@ -102,45 +105,60 @@ export default function FileManagementPage() {
         }
     };
 
+    const getSequenceCount = (file) => {
+        console.log("Metadata for file:", file.metadata);
+        const foundMeta = file.metadata?.find((m) => m.key === "analysis_result");
+        console.log("Found metadata:", foundMeta);
+        if (!foundMeta) return "N/A";
+
+        const match = foundMeta.value.match(/Found (\d+) sequences/i);
+        return match ? parseInt(match[1], 10) : "N/A";
+    };
+
     const renderTable = (files, label) => (
-                <>
+        <>
             <h2 className="text-xl font-bold my-4">{label} ({files.length})</h2>
             <table className="w-full table-auto border-collapse">
                 <thead>
                     <tr className="bg-gray-200 text-left">
                         <th className="p-2 border">Filename</th>
-                        <th className="p-2 border">Actions</th>
+                        <th className="p-2 border text-center">Sequences</th>
+                        <th className="p-2 border text-right">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {files.map((file) => (
-                        <tr key={file.id} className="border-t">
+                    {files.length === 0 ? (
+                            <tr>
+                                <td colSpan={3} className="p-2 text-gray-500 italic text-center">
+                                No files found.
+                                </td>
+                            </tr>
+                            ) : (
+                            files.map((file, index) => (
+                        <tr
+                            key={file.id}
+                            className="border-t"
+                        >
                             <td className="p-2 border">{file.filename}</td>
+                            <td className="p-2 border">{getSequenceCount(file)}</td>
                             <td className="p-2 border space-x-2">
                                 <button
-                                    className="bg-blue-500 text-white px-3 py-1 rounded"
+                                    title="Download"
+                                    className="download-button"
                                     onClick={() => handleDownload(file.id)}
                                 >
-                                    Download
+                                    <Download size={18} />
                                 </button>
                                 <button
-                                    className="bg-red-500 text-white px-3 py-1 rounded"
+                                    title="Delete"
+                                    className="delete-button"
                                     onClick={() => handleDeleteClick(file)}
                                 >
-                                    Delete
+                                    <Trash2 size={18} />
                                 </button>
                             </td>
                         </tr>
-                    ))}
-
-                    
-
-                    {files.length === 0 && (
-                        <tr>
-                            <td colSpan={2} className="p-2 text-gray-500 italic text-center">
-                                No files found.
-                            </td>
-                        </tr>
+                        ))
                     )}
                 </tbody>
             </table>

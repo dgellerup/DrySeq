@@ -1,0 +1,52 @@
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  padding: 10px;
+  border: 1px solid #ddd;
+}
+
+th {
+  background-color: #eee;
+  text-align: left;
+}
+
+tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+.actions-cell {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.delete-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+    transition: color 0.2s;
+}
+
+.download-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary);
+    transition: color 0.2s;
+}
+
+.icon-button:hover {
+    color: var(--accent);
+}
