@@ -41,7 +41,7 @@ export default function HomePage() {
                 {fastaFiles.map((file) => (
                     <li key={file.id} className="border p-2 rounded">
                         <div>
-                            <strong>{file.filename}</strong> - {file.category}
+                            <strong>{file.filename}</strong> - {file.category} - {file.analysisResult}
                         </div>
                         <div className="text-sm text-gray-600">
                             Uploaded: {new Date(file.uploadedAt).toLocaleString()}

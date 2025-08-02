@@ -4,7 +4,10 @@ import { useAuth } from "../contexts/AuthContext";
 export default function UploadPage() {
     const [file, setFile] = useState(null);
     const [category, setCategory] = useState("genomic");
-    const [message, setMessage] = useState("");
+    const [uploadSuccess, setUploadSuccess] = useState("");
+    const [uploadError, setUploadError] = useState("");
+    const [analyzeSuccess, setAnalyzeSuccess] = useState("");
+    const [analyzeError, setAnalyzeError] = useState("");
 
     const { token } = useAuth();
 
@@ -16,8 +19,9 @@ export default function UploadPage() {
         formData.append("file", file);
         formData.append("category", category);
 
+        let data = null;
         try {
-          const res = await fetch("http://localhost:5000/upload", {
+          const uploadFastaResponse = await fetch("http://localhost:5000/upload", {
             method: "POST",
             headers: {
               Authorization: `Bearer ${token}`,
@@ -25,15 +29,43 @@ export default function UploadPage() {
             body: formData,
           });
 
-          if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(errText);
+          if (!uploadFastaResponse.ok) {
+            const errData = await uploadFastaResponse.json();
+            setUploadError(errData.error || "Upload failed");
+            return;
           }
 
-          const data = await res.json();
-          setMessage(`Uploaded to ${data.category}`);
+          data = await uploadFastaResponse.json();
+
+          setUploadSuccess(`Uploaded to ${data.category}`);
+          setUploadError("");
+
         } catch (err) {
-          setMessage(`Error: ${err.message}`);
+          setUploadError("Upload: Could not connect to the server.");
+        }
+
+        try {
+
+          const analyzeFastaResponse = await fetch("http://localhost:5000/analyze-fasta", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ fileId: data.fileId }),
+          });
+
+          if (!analyzeFastaResponse.ok) {
+            const analyzeErrData = await analyzeFastaResponse.json();
+            setAnalyzeError(analyzeErrData.error || "Processing FASTA failed");
+            return;
+          }
+
+          setAnalyzeSuccess(`${data.filename} processed successfully.`);
+          setAnalyzeError("");
+
+        } catch (err) {
+          setAnalyzeError("FASTA Analysis: Could not connect to the server.");
         }
     };
 
@@ -52,7 +84,10 @@ export default function UploadPage() {
           <button type="submit">Upload</button>
         </form>
       )}
-      {message && <p>{message}</p>}
+      {uploadError && <p style={{ color: "red" }}>{uploadError}</p>}
+      {uploadSuccess && <p style={{ color: "green" }}>{uploadSuccess}</p>}
+      {analyzeError && <p style={{ color: "red" }}>{analyzeError}</p>}
+      {analyzeSuccess && <p style={{ color: "green" }}>{analyzeSuccess}</p>}
     </div>
   );
 }
