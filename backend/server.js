@@ -209,6 +209,44 @@ app.post("/upload", authenticateToken, upload.single("file"), async (req, res) =
 
 });
 
+app.get("/download/:fileId", authenticateToken, async (req, res) => {
+    const { fileId } = req.params;
+
+    try {
+        const file = await prisma.file.findUnique({ where: { id: parseInt(fileId) } });
+        if (!file) return res.status(404).json({ error: "File not found" });
+
+        const filePath = path.resolve(__dirname, "uploads", file.filename);
+        if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File not found." });
+
+        res.download(filePath, file.filename);
+    } catch (err) {
+        console.error("Download error:", err);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+app.delete("/delete/:fileId", async (req, res) => {
+    const { fileId } = req.params;
+
+    try {
+        const file = await prisma.file.findUnique({ where: { id: parseInt(fileId) } });
+        if (!file) return res.status(404).json({ error: "File not found" });
+
+        const filePath = path.resolve(__dirname, "uploads", file.filename);
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath); // Remove from disk
+        }
+
+        await prisma.file.delete({ where: {id: parseInt(fileId) } }); // Remove from DB
+
+        res.json({ message: "file deleted successfully" });
+    } catch (err) {
+        console.error("Delete error:", err);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
 app.get("/fasta-files", authenticateToken, async (req, res) => {
     const userId = req.user?.userId;
 
@@ -422,16 +460,6 @@ app.get("/analyses", authenticateToken, async (req, res) => {
     });
 
     res.json(analyses);
-});
-
-app.get("/download/:filename", authenticateToken, (req, res) => {
-    const { category, filename } = req.params;
-    const filePath = path.join(__dirname, "uploads", category, filename);
-    if (fs.existsSync(filePath)) {
-        res.download(filePath);
-    } else {
-        res.status(404).json({ error: "File not found" });
-    }
 });
 
 app.listen(PORT, () => {

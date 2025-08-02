@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useAuth } from "../contexts/AuthContext"; // assuming token there
+import { toast } from "react-toastify";
 
 export default function FileManagementPage() {
     const { token } = useAuth();
@@ -7,7 +8,7 @@ export default function FileManagementPage() {
     const [fastaFiles, setFastaFiles] = useState([]);
     const [fastqFiles, setFastqFiles] = useState([]);
 
-    const fetchFastaFiles = async() => {
+    const fetchFastaFiles = useCallback(async() => {
         try {
             const res = await fetch("http://localhost:5000/fasta-files", {
                 headers: { Authorization: `Bearer ${token}` },
@@ -17,9 +18,9 @@ export default function FileManagementPage() {
         } catch (err) {
             console.error("Failed to fetch FASTA files:", err);
         }
-    };
+    }, [token]);
 
-    const fetchFastqFiles = async() => {
+    const fetchFastqFiles = useCallback(async() => {
         try {
             const res = await fetch("http://localhost:5000/fastq-files", {
                 headers: { Authorization: `Bearer ${token}` },
@@ -29,7 +30,7 @@ export default function FileManagementPage() {
         } catch (err) {
              console.error("Failed to fetch FASTQ files:", err);
         }
-    }
+    }, [token]);
 
     useEffect(() => {
         if (!token) return;
@@ -37,10 +38,14 @@ export default function FileManagementPage() {
         fetchFastaFiles();
         fetchFastqFiles();
 
-    }, [token]);
+    }, [token, fetchFastaFiles, fetchFastqFiles]);
 
-        const handleDownload = async (fileId) => {
+    const handleDownload = async (fileId) => {
         try {
+            const file =
+                fastaFiles.find((f) => f.id === fileId) ||
+                fastqFiles.find((f) => f.id === fileId);
+
             const res = await fetch(`http://localhost:5000/download/${fileId}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
@@ -48,7 +53,7 @@ export default function FileManagementPage() {
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = "file.fasta"; // optionally replace with dynamic filename
+            a.download = file.filename; // optionally replace with dynamic filename
             document.body.appendChild(a);
             a.click();
             a.remove();
@@ -59,14 +64,28 @@ export default function FileManagementPage() {
 
     const handleDelete = async (fileId) => {
         try {
+            const file =
+                fastaFiles.find((f) => f.id === fileId) ||
+                fastqFiles.find((f) => f.id === fileId);
+
             await fetch(`http://localhost:5000/delete/${fileId}`, {
                 method: "DELETE",
                 headers: { Authorization: `Bearer ${token}` },
             });
+
             await fetchFastaFiles();
             await fetchFastqFiles();
+
+            
+            if (file) {
+                toast.info(`"${file.filename}" has been deleted.`);
+            } else {
+                toast.info(`File deleted.`);
+            }
+            
         } catch (err) {
             console.error("Failed to delete file:", err);
+            toast.error("Failed to delete file.");
         }
     };
 
