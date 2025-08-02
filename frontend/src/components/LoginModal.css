@@ -34,15 +34,6 @@
   margin-top: 10px;
 }
 
-.modal-close {
-  background: var(--accent);
-  color: white;
-  border: none;
-  padding: 6px 12px;
-  margin-top: 10px;
-  cursor: pointer;
-}
-
 .error {
   color: red;
   font-size: 0.9em;

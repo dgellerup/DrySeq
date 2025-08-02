@@ -2,11 +2,16 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useAuth } from "../contexts/AuthContext"; // assuming token there
 import { toast } from "react-toastify";
 
+import ConfirmDialogModal from "../components/ConfirmDialogModal";
+
 export default function FileManagementPage() {
     const { token } = useAuth();
 
     const [fastaFiles, setFastaFiles] = useState([]);
     const [fastqFiles, setFastqFiles] = useState([]);
+
+    const [fileToDelete, setFileToDelete] = useState(null);
+    const [confirmOpen, setConfirmOpen] = useState(false);
 
     const fetchFastaFiles = useCallback(async() => {
         try {
@@ -62,6 +67,11 @@ export default function FileManagementPage() {
         }
     };
 
+    const handleDeleteClick = (file) => {
+        setFileToDelete(file);
+        setConfirmOpen(true);
+    }
+
     const handleDelete = async (fileId) => {
         try {
             const file =
@@ -86,6 +96,9 @@ export default function FileManagementPage() {
         } catch (err) {
             console.error("Failed to delete file:", err);
             toast.error("Failed to delete file.");
+        } finally {
+            setConfirmOpen(false);
+            setFileToDelete(null);
         }
     };
 
@@ -112,13 +125,16 @@ export default function FileManagementPage() {
                                 </button>
                                 <button
                                     className="bg-red-500 text-white px-3 py-1 rounded"
-                                    onClick={() => handleDelete(file.id)}
+                                    onClick={() => handleDeleteClick(file)}
                                 >
                                     Delete
                                 </button>
                             </td>
                         </tr>
                     ))}
+
+                    
+
                     {files.length === 0 && (
                         <tr>
                             <td colSpan={2} className="p-2 text-gray-500 italic text-center">
@@ -135,6 +151,14 @@ export default function FileManagementPage() {
         <div className="p-4">
             {renderTable(fastaFiles, "FASTA Files")}
             {renderTable(fastqFiles, "FASTQ Files")}
+
+            
+            <ConfirmDialogModal
+                isOpen={confirmOpen}
+                onConfirm={() => handleDelete(fileToDelete.id)}
+                onCancel={() => setConfirmOpen(false)}
+                message={`Are you sure you want to delete "${fileToDelete?.filename}"?`}
+            />
         </div>
     );
 }

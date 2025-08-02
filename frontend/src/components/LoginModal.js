@@ -54,7 +54,7 @@ export default function LoginModal({ onClose, onLoginSuccess }) {
                         />
                         {error && <p className="error">{error}</p>}
                         <div className="modal-buttons">
-                            <button type="button" className="modal-close" onClick={onClose}>Cancel</button>
+                            <button type="button" className="modal-cancel" onClick={onClose}>Cancel</button>
                             <button type="submit" className="modal-login">Login</button>
                         </div>
                     </form>
