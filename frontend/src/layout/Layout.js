@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Home, Upload, ActivitySquare } from "lucide-react";
+import { Home, File, Upload, ActivitySquare } from "lucide-react";
 import "./Layout.css";
 import LoginModal from "../components/LoginModal";
 import { useAuth } from "../contexts/AuthContext";
@@ -39,6 +39,10 @@ export default function Layout({ children }) {
                     <Link to="/" className={`sidebar-link ${currentPath === "/" ? "active" : ""}`}>
                         <Home size={18} style={{ marginRight: "8px" }} />
                         Home
+                    </Link>
+                    <Link to="/file-management" className={`sidebar-link ${currentPath === "/file-management" ? "active" : ""}`}>
+                        <File size={18} style={{ marginRight: "8px" }} />
+                        File Management
                     </Link>
                     <Link to="/upload" className={`sidebar-link ${currentPath === "/upload" ? "active" : ""}`}>
                         <Upload size={18} style={{ marginRight: "8px" }} />

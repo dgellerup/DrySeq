@@ -7,24 +7,41 @@ export default function HomePage() {
     const [fastaFiles, setFastaFiles] = useState([]);
     const [fastqFiles, setFastqFiles] = useState([]);
 
-    useEffect(() => {
-        if (!token) return;
-        fetch("http://localhost:5000/fasta-files", {
-            headers: { Authorization: `Bearer ${token}` },
-        })
-            .then((res) => res.json())
-            .then(setFastaFiles)
-            .catch((err) => console.error("Failed to fetch FASTA files:", err));
-    }, [token]);
+    const fetchFastaFiles = async() => {
+        try {
+            const res = await fetch("http://localhost:5000/fasta-files", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const data = await res.json();
+            setFastaFiles(data);
+        } catch (err) {
+            console.error("Failed to fetch FASTA files:", err);
+        }
+    };
+
+    const fetchFastqFiles = async() => {
+        try {
+            const res = await fetch("http://localhost:5000/fastq-files", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const data = await res.json();
+            setFastqFiles(data);
+        } catch (err) {
+             console.error("Failed to fetch FASTQ files:", err);
+        }
+    }
 
     useEffect(() => {
         if (!token) return;
-        fetch("http://localhost:5000/fastq-files", {
-            headers: { Authorization: `Bearer ${token}` },
-        })
-            .then((res) => res.json())
-            .then(setFastqFiles)
-            .catch((err) => console.error("Failed to fetch FASTQ files:", err));
+
+        fetchFastaFiles();
+        fetchFastqFiles();
+
+        // const interval = setInterval(() => {
+        //     fetchFastqFiles();
+        // }, 15000);
+
+        // return () => clearInterval(interval);
     }, [token]);
 
 
@@ -41,7 +58,7 @@ export default function HomePage() {
                 {fastaFiles.map((file) => (
                     <li key={file.id} className="border p-2 rounded">
                         <div>
-                            <strong>{file.filename}</strong> - {file.category} - {file.analysisResult}
+                            <strong>{file.filename}</strong> - {file.category} - {file.analysisResult || "Processing"}
                         </div>
                         <div className="text-sm text-gray-600">
                             Uploaded: {new Date(file.uploadedAt).toLocaleString()}

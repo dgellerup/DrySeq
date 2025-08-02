@@ -1,6 +1,7 @@
 import { createContext, useContext, useRef, useState, useEffect } from "react";
 import { jwtDecode } from "jwt-decode";
 import { useNavigate } from "react-router-dom";
+import { toast } from "react-toastify";
 
 const AuthContext = createContext();
 
@@ -47,13 +48,18 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const logout = () => {
+  const logout = (auto = false) => {
     localStorage.removeItem("token");
     setToken(null);
     setUsername("");
     if (logoutTimer.current) {
       clearTimeout(logoutTimer.current);
       logoutTimer.current = null;
+    }
+    if (auto) {
+      toast.info("You've been logged out automatically due to token expiration.")
+    } else {
+      toast.info("You've been logged out.")
     }
     navigate("/");
   };
