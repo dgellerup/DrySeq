@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { toast } from "react-toastify";
+
 import { useAuth } from "../contexts/AuthContext";
 
 export default function UploadPage() {
@@ -31,17 +33,21 @@ export default function UploadPage() {
 
           if (!uploadFastaResponse.ok) {
             const errData = await uploadFastaResponse.json();
-            setUploadError(errData.error || "Upload failed");
+            const errorMsg = errData.error || "Upload failed";
+            toast.info(errorMsg);
             return;
           }
 
           data = await uploadFastaResponse.json();
 
-          setUploadSuccess(`Uploaded to ${data.category}`);
+          const message = `Uploaded to ${data.category}`;
           setUploadError("");
 
+          toast.info(message);
+
         } catch (err) {
-          setUploadError("Upload: Could not connect to the server.");
+          const errorMsg = "Upload: Could not connect to the server.";
+          toast.info(errorMsg);
         }
 
         try {
@@ -57,15 +63,19 @@ export default function UploadPage() {
 
           if (!analyzeFastaResponse.ok) {
             const analyzeErrData = await analyzeFastaResponse.json();
-            setAnalyzeError(analyzeErrData.error || "Processing FASTA failed");
+            const errorMsg = analyzeErrData.error || "Processing FASTA failed";
+            toast.info(errorMsg);
             return;
           }
 
-          setAnalyzeSuccess(`${data.filename} processed successfully.`);
+          const message = `${data.filename} processed successfully.`;
           setAnalyzeError("");
 
+          toast.info(message);
+
         } catch (err) {
-          setAnalyzeError("FASTA Analysis: Could not connect to the server.");
+          const errorMsg = "FASTA Analysis: Could not connect to the server.";
+          toast.info(errorMsg);
         }
     };
 
@@ -84,10 +94,6 @@ export default function UploadPage() {
           <button type="submit">Upload</button>
         </form>
       )}
-      {uploadError && <p style={{ color: "red" }}>{uploadError}</p>}
-      {uploadSuccess && <p style={{ color: "green" }}>{uploadSuccess}</p>}
-      {analyzeError && <p style={{ color: "red" }}>{analyzeError}</p>}
-      {analyzeSuccess && <p style={{ color: "green" }}>{analyzeSuccess}</p>}
     </div>
   );
 }
