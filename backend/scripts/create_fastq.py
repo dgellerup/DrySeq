@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import gzip
 import json
 import sys
+import random
+from itertools import count
 from pathlib import Path
 
 import ahocorasick
+from Bio.SeqRecord import SeqRecord
 from Bio import SeqIO
 from Bio.Seq import Seq
 
@@ -47,16 +51,93 @@ def generate_artificial_amplicons(reference_sequences: dict[str, str], primer_se
                 amplicons_dict[f"{reference_name}_{f_primer_name}_{r_primer_name}"] = amplicon_seq
     return amplicons_dict
 
+def load_cycle_stats() -> list[float]:
+
+    script_dir = Path(__file__).resolve().parent
+
+    cycle_quality_stats_path = script_dir.parent / "resources" / "cycle_quality_stats.json"
+
+    with cycle_quality_stats_path.open("r") as f:
+        cycle_quality_stats = json.load(f)
+
+    return cycle_quality_stats
+
+def load_overrun_base_probabilities() -> dict[str, float]:
+
+    script_dir = Path(__file__).resolve().parent
+
+    base_probabilities_path = script_dir.parent / "resources" / "read_overrun_base_probabilities.json"
+
+    with base_probabilities_path.open("R") as f:
+        overrun_base_probabilities = json.load(f)
+
+    return overrun_base_probabilities
+
+def choose_overrun_bases(overrun_base_probabilities: dict[str, float], num_bases: int) -> list[str]:
+    return random.choices(
+        list(overrun_base_probabilities.keys(),
+        weights=overrun_base_probabilities.values()),
+        k=num_bases)
+
+def create_overrun_sequence(overrun_base_probabilities: dict[str, float], num_bases: int) -> str:
+    return ''.join(choose_overrun_bases(overrun_base_probabilities, num_bases))
+
+def create_overrun_qualities(num_bases: int) -> str:
+    return ''.join(random.choices(list(range(1, 11)), k=num_bases))
+
+def generate_read_name_generator(instrument="M00000", run_id="00001", flowcell="AAAAAA", lane=1):
+    read_counter = count(1)
+
+    def generate_read_name():
+        read_number = next(read_counter)
+        tile = random.randint(1101, 1200)
+        x = random.randint(0, 5000)
+        y = random.randint(0, 5000)
+        is_filtered = random.choice(["Y", "N"])
+        control_number = 0
+        read = random.choice([1, 2])
+
+        return f"{instrument}:{run_id}:{flowcell}:{lane}:{tile}:{x}:{y} {read}:{is_filtered}:{control_number}:1"
+    
+    return generate_read_name
+
+def write_fastq_files(amplicons_dict: dict, sequence_count: int, output_path: Path):
+
+    cycle_quality_stats = load_cycle_stats()
+    overrun_base_probabilities = load_overrun_base_probabilities()
+
+    gen_read_name = generate_read_name_generator()
+    
+    with gzip.open(output_path, "wt") as fastq_file:
+        for _ in range(sequence_count):
+            amp_seq = random.choice(list(amplicons_dict.values()))
+            if len(amp_seq) >= 251:
+                r1_seq = amp_seq[:251]
+                r1_qualities = [round(x) for x in cycle_quality_stats]
+            else:
+                overrun_length = 251 - len(amp_seq)
+                r1_seq = Seq(amp_seq + create_overrun_sequence(overrun_base_probabilities, overrun_length))
+                r1_qualities = ''.join(
+                    [round(x) for x in cycle_quality_stats[:-overrun_length]]
+                    ) + create_overrun_qualities(overrun_length)
+            
+            record = SeqRecord(r1_seq, id=f"{gen_read_name()}", description="")
+            record.letter_annotations["phred_quality"] = r1_qualities
+            SeqIO.write(record, fastq_file, "fastq")
 
 def create_fastq(primer_path: Path, reference_path: Path, output_path: Path, sequence_count: int):
-    primer_sequences = parse_fasta(primer_path)
-    reference_sequences = parse_fasta(reference_path)
+    try:
+        primer_sequences = parse_fasta(primer_path)
+        reference_sequences = parse_fasta(reference_path)
 
-    amplicons_dict = generate_artificial_amplicons(reference_sequences, primer_sequences)
+        amplicons_dict = generate_artificial_amplicons(reference_sequences, primer_sequences)
 
-    result = {
-        "sequence_count": len()
-    }
+        write_fastq_files(amplicons_dict, sequence_count, output_path)
+
+        result = {"status": "success"}
+    except Exception as e:
+        result = {"status": "fail"}
+
     print(json.dumps(result))
 
 if __name__ == "__main__":
