@@ -109,7 +109,7 @@ def generate_fastq_filename(sample_name: str, read: str):
     index = "001"
     return f"{sample_name}_S{sample_num}_{lane}_{read}_{index}.fastq.gz"
 
-def write_fastq_files(amplicons_dict: dict, sequence_count: int, output_dir: Path, sample_name: str):
+def write_fastq_files(amplicons_dict: dict, sequence_count: int, output_dir: Path, sample_name: str) -> tuple[Path, Path]:
 
     r1_path = output_dir / generate_fastq_filename(sample_name, "R1")
     r2_path = output_dir / generate_fastq_filename(sample_name, "R2")
@@ -152,6 +152,8 @@ def write_fastq_files(amplicons_dict: dict, sequence_count: int, output_dir: Pat
             SeqIO.write(r1_record, r1_file, "fastq")
             SeqIO.write(r2_record, r2_file, "fastq")
 
+    return (r1_path, r2_path)
+
 def create_fastq(primer_path: Path, reference_path: Path, output_dir: Path, sample_name: str, sequence_count: int):
     try:
         primer_sequences = parse_fasta(primer_path)
@@ -159,11 +161,17 @@ def create_fastq(primer_path: Path, reference_path: Path, output_dir: Path, samp
 
         amplicons_dict = generate_artificial_amplicons(reference_sequences, primer_sequences)
 
-        write_fastq_files(amplicons_dict, sequence_count, output_dir, sample_name)
+        r1_path, r2_path = write_fastq_files(amplicons_dict, sequence_count, output_dir, sample_name)
 
-        result = {"status": "success"}
+        result = {"status": "success",
+                  "r1_path": r1_path,
+                  "r2_path": r2_path,
+                  }
     except Exception as e:
-        result = {"status": "fail"}
+        result = {"status": "fail",
+                  "error": str(e),
+                  "r1_path": None,
+                  "r2_path": None}
 
     print(json.dumps(result))
 
