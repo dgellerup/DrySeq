@@ -88,18 +88,20 @@ def create_overrun_qualities(num_bases: int) -> list[int]:
 def generate_read_name_generator(instrument="M00000", run_id="00001", flowcell="AAAAAA", lane=1):
     read_counter = count(1)
 
-    def generate_read_name():
+    def generate_read_names():
         read_number = next(read_counter)
-        tile = random.randint(1101, 1200)
-        x = random.randint(0, 5000)
-        y = random.randint(0, 5000)
+        tile = 1101 + ((read_number // 1000) % 100)
+        x = (read_number * 37) % 5000
+        y = (read_number * 73) % 5000
         is_filtered = random.choice(["Y", "N"])
         control_number = 0
-        read = random.choice([1, 2])
 
-        return f"{instrument}:{run_id}:{flowcell}:{lane}:{tile}:{x}:{y} {read}:{is_filtered}:{control_number}:1"
+        return (
+            f"{instrument}:{run_id}:{flowcell}:{lane}:{tile}:{x}:{y} 1:{is_filtered}:{control_number}:1",
+            f"{instrument}:{run_id}:{flowcell}:{lane}:{tile}:{x}:{y} 2:{is_filtered}:{control_number}:1"
+        )
     
-    return generate_read_name
+    return generate_read_names
 
 def generate_fastq_filename(sample_name: str, read: str):
     sample_num = random.randint(1, 100)
@@ -115,13 +117,13 @@ def write_fastq_files(amplicons_dict: dict, sequence_count: int, output_dir: Pat
     cycle_quality_stats = load_cycle_stats()
     overrun_base_probabilities = load_overrun_base_probabilities()
 
-    gen_read_name = generate_read_name_generator()
+    gen_read_names = generate_read_name_generator()
     
     with gzip.open(r1_path, "wt") as r1_file, gzip.open(r2_path, "wt") as r2_file:
         for _ in range(sequence_count):
             _, amplicon = random.choice(list(amplicons_dict.values()))
             amplicon = amplicon.upper()
-            read_name = gen_read_name()
+            r1_read_name, r2_read_name = gen_read_names()
 
             if len(amplicon) >= 251:
                 r1_seq = amplicon[:251]
@@ -141,10 +143,10 @@ def write_fastq_files(amplicons_dict: dict, sequence_count: int, output_dir: Pat
                 r2_seq = Seq(r2_raw[-251:]).reverse_complement()
                 r2_qual = create_overrun_qualities(overrun_len) + [round(q) for q in cycle_quality_stats[:len(amplicon)]]
             
-            r1_record = SeqRecord(r1_seq, id=read_name, description="")
+            r1_record = SeqRecord(r1_seq, id=r1_read_name, description="")
             r1_record.letter_annotations["phred_quality"] = r1_qual
 
-            r2_record = SeqRecord(r2_seq, id=read_name, description="")
+            r2_record = SeqRecord(r2_seq, id=r2_read_name, description="")
             r2_record.letter_annotations["phred_quality"] = r2_qual
 
             SeqIO.write(r1_record, r1_file, "fastq")
