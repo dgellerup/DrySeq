@@ -112,7 +112,7 @@ def generate_fastq_filename(sample_name: str, read: str):
 def write_fastq_files(amplicons_dict: dict, sequence_count: int, output_dir: Path, sample_name: str):
 
     r1_path = output_dir / generate_fastq_filename(sample_name, "R1")
-    r2_path = output_dir / generate_fastq_filename(sample_name, "R1")
+    r2_path = output_dir / generate_fastq_filename(sample_name, "R2")
 
     cycle_quality_stats = load_cycle_stats()
     overrun_base_probabilities = load_overrun_base_probabilities()
