@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import gzip
 import json
 import sys
@@ -11,6 +12,18 @@ import ahocorasick
 from Bio.SeqRecord import SeqRecord
 from Bio import SeqIO
 from Bio.Seq import Seq
+
+def get_arguments() -> argparse.ArgumentParser:
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--primer_path", required=True, type=str)
+    parser.add_argument("--reference_path", required=True, type=str)
+    parser.add_argument("--output_dir", required=True, type=str)
+    parser.add_argument("--sample_name", required=True, type=str)
+    parser.add_argument("--sequence_count", required=True, type=int)
+
+    return parser.parse_args()
 
 def parse_fasta(file_path: Path) -> dict[str, str]:
     records = {}
@@ -176,4 +189,21 @@ def create_fastq(primer_path: Path, reference_path: Path, output_dir: Path, samp
     print(json.dumps(result))
 
 if __name__ == "__main__":
-    create_fastq(Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), str(sys.argv[4]), int(sys.argv[5]))
+
+    try:
+        args = get_arguments()
+    except Exception as e:
+        result = {"status": "fail",
+                "error": str(e),
+                "r1_path": None,
+                "r2_path": None,
+                }
+        print(json.dumps(result))
+
+    primer_path = Path(args.primer_path)
+    reference_path = Path(args.reference_path)
+    output_dir = Path(args.output_dir)
+    sample_name = args.sample_name
+    sequence_count = args.sequence_count
+
+    create_fastq(primer_path, reference_path, output_dir, sample_name, sequence_count)
