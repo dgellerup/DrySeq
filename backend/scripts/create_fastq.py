@@ -82,8 +82,8 @@ def choose_overrun_bases(overrun_base_probabilities: dict[str, float], num_bases
 def create_overrun_sequence(overrun_base_probabilities: dict[str, float], num_bases: int) -> str:
     return ''.join(choose_overrun_bases(overrun_base_probabilities, num_bases))
 
-def create_overrun_qualities(num_bases: int) -> str:
-    return ''.join(random.choices(list(range(1, 11)), k=num_bases))
+def create_overrun_qualities(num_bases: int) -> list[int]:
+    return random.choices(list(range(1, 11)), k=num_bases)
 
 def generate_read_name_generator(instrument="M00000", run_id="00001", flowcell="AAAAAA", lane=1):
     read_counter = count(1)
@@ -101,38 +101,63 @@ def generate_read_name_generator(instrument="M00000", run_id="00001", flowcell="
     
     return generate_read_name
 
-def write_fastq_files(amplicons_dict: dict, sequence_count: int, output_path: Path):
+def generate_fastq_filename(sample_name: str, read: str):
+    sample_num = random.randint(1, 100)
+    lane = "L001"
+    index = "001"
+    return f"{sample_name}_S{sample_num}_{lane}_{read}_{index}.fastq.gz"
+
+def write_fastq_files(amplicons_dict: dict, sequence_count: int, output_dir: Path, sample_name: str):
+
+    r1_path = output_dir / generate_fastq_filename(sample_name, "R1")
+    r2_path = output_dir / generate_fastq_filename(sample_name, "R1")
 
     cycle_quality_stats = load_cycle_stats()
     overrun_base_probabilities = load_overrun_base_probabilities()
 
     gen_read_name = generate_read_name_generator()
     
-    with gzip.open(output_path, "wt") as fastq_file:
+    with gzip.open(r1_path, "wt") as r1_file, gzip.open(r2_path, "wt") as r2_file:
         for _ in range(sequence_count):
-            amp_seq = random.choice(list(amplicons_dict.values()))
-            if len(amp_seq) >= 251:
-                r1_seq = amp_seq[:251]
-                r1_qualities = [round(x) for x in cycle_quality_stats]
-            else:
-                overrun_length = 251 - len(amp_seq)
-                r1_seq = Seq(amp_seq + create_overrun_sequence(overrun_base_probabilities, overrun_length))
-                r1_qualities = ''.join(
-                    [round(x) for x in cycle_quality_stats[:-overrun_length]]
-                    ) + create_overrun_qualities(overrun_length)
-            
-            record = SeqRecord(r1_seq, id=f"{gen_read_name()}", description="")
-            record.letter_annotations["phred_quality"] = r1_qualities
-            SeqIO.write(record, fastq_file, "fastq")
+            _, amplicon = random.choice(list(amplicons_dict.values()))
+            amplicon = amplicon.upper()
+            read_name = gen_read_name()
 
-def create_fastq(primer_path: Path, reference_path: Path, output_path: Path, sequence_count: int):
+            if len(amplicon) >= 251:
+                r1_seq = amplicon[:251]
+                r1_qual = [round(x) for x in cycle_quality_stats[:251]]
+            else:
+                overrun_length = 251 - len(amplicon)
+                r1_seq = Seq(amplicon + create_overrun_sequence(overrun_base_probabilities, overrun_length))
+                r1_qual = [round(x) for x in cycle_quality_stats[:-overrun_length]] + create_overrun_qualities(overrun_length)
+
+
+            if len(amplicon) >= 251:
+                r2_seq = Seq(amplicon[-251:]).reverse_complement()
+                r2_qual = [round(q) for q in cycle_quality_stats[:251]]
+            else:
+                overrun_len = 251 - len(amplicon)
+                r2_raw = create_overrun_sequence(overrun_base_probabilities, overrun_length) + amplicon
+                r2_seq = Seq(r2_raw[-251:]).reverse_complement()
+                r2_qual = create_overrun_qualities(overrun_len) + [round(q) for q in cycle_quality_stats[:len(amplicon)]]
+            
+            r1_record = SeqRecord(r1_seq, id=read_name, description="")
+            r1_record.letter_annotations["phred_quality"] = r1_qual
+
+            r2_record = SeqRecord(r2_seq, id=read_name, description="")
+            r2_record.letter_annotations["phred_quality"] = r2_qual
+
+            SeqIO.write(r1_record, r1_file, "fastq")
+            SeqIO.write(r2_record, r2_file, "fastq")
+
+def create_fastq(primer_path: Path, reference_path: Path, output_dir: Path, sample_name: str, sequence_count: int):
     try:
         primer_sequences = parse_fasta(primer_path)
         reference_sequences = parse_fasta(reference_path)
 
         amplicons_dict = generate_artificial_amplicons(reference_sequences, primer_sequences)
 
-        write_fastq_files(amplicons_dict, sequence_count, output_path)
+        write_fastq_files(amplicons_dict, sequence_count, output_dir, sample_name)
 
         result = {"status": "success"}
     except Exception as e:
@@ -141,4 +166,4 @@ def create_fastq(primer_path: Path, reference_path: Path, output_path: Path, seq
     print(json.dumps(result))
 
 if __name__ == "__main__":
-    create_fastq(Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), int(sys.argv[4]))
+    create_fastq(Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), str(sys.argv[4]), int(sys.argv[5]))
