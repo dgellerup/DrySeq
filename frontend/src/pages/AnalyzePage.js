@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useAuth } from "../contexts/AuthContext";
 
 export default function AnalyzePage() {
     const [primerFiles, setPrimerFiles] = useState([]);
@@ -8,7 +9,7 @@ export default function AnalyzePage() {
     const [result, setResult] = useState("");
     const [loading, setLoading] = useState("");
 
-    const token = localStorage.getItem("token");
+    const { token } = useAuth();
 
     useEffect(() => {
         const fetchFiles = async () => {
@@ -24,6 +25,7 @@ export default function AnalyzePage() {
                 }
 
                 const data = await res.json();
+                console.log("Fetched files:", data);
                 setPrimerFiles(data.primer || []);
                 setReferenceFiles(data.genomic || []);
             } catch (err) {
@@ -83,7 +85,7 @@ return (
                     <label>Primer File:</label>
                     <select
                         value={primerFile}
-                        onChange={(e) => setPrimerFile(e.target.value)}
+                        onChange={(e) => setPrimerFile(parseInt(e.target.value))}
                     >
                         <option value="">Select Primer File</option>
                         {primerFiles.map((file) => (
@@ -98,7 +100,7 @@ return (
                     <label>Reference File:</label>
                     <select
                         value={referenceFile}
-                        onChange={(e) => setReferenceFile(e.target.value)}
+                        onChange={(e) => setReferenceFile(parseInt(e.target.value))}
                     >
                         <option value="">Select Reference File</option>
                         {referenceFiles.map((file) => (
@@ -118,7 +120,7 @@ return (
                 </button>
 
                 {result && (
-                    <pre
+                    <div
                         style={{
                             marginTop: "20px",
                             background: "#f4f4f4",
@@ -126,8 +128,9 @@ return (
                             whiteSpace: "pre-wrap",
                         }}
                     >
-                        {result}
-                    </pre>
+                        <p>Primer count: {result.primer_count}</p>
+                        <p>Reference count: {result.reference_count}</p>
+                    </div>
                 )}
             </>
         )}

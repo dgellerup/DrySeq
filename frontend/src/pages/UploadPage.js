@@ -1,12 +1,17 @@
 import React, { useState } from "react";
-import { uploadFile } from "../api";
+import { toast } from "react-toastify";
+
+import { useAuth } from "../contexts/AuthContext";
 
 export default function UploadPage() {
     const [file, setFile] = useState(null);
     const [category, setCategory] = useState("genomic");
-    const [message, setMessage] = useState("");
+    const [uploadSuccess, setUploadSuccess] = useState("");
+    const [uploadError, setUploadError] = useState("");
+    const [analyzeSuccess, setAnalyzeSuccess] = useState("");
+    const [analyzeError, setAnalyzeError] = useState("");
 
-    const token = localStorage.getItem("token");
+    const { token } = useAuth();
 
     const handleUpload = async (e) => {
         e.preventDefault();
@@ -16,14 +21,62 @@ export default function UploadPage() {
         formData.append("file", file);
         formData.append("category", category);
 
-        const res = await fetch("http://localhost:5000/upload", {
+        let data = null;
+        try {
+          const uploadFastaResponse = await fetch("http://localhost:5000/upload", {
             method: "POST",
-            headers: { Authorization: `Bearer ${token}`},
-            body: formData
-        });
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            body: formData,
+          });
 
-        const data = await res.json();
-        setMessage(res.ok ? `Uploaded to ${data.category}` : `Error: ${data.error}`);
+          if (!uploadFastaResponse.ok) {
+            const errData = await uploadFastaResponse.json();
+            const errorMsg = errData.error || "Upload failed";
+            toast.info(errorMsg);
+            return;
+          }
+
+          data = await uploadFastaResponse.json();
+
+          const message = `Uploaded to ${data.category}`;
+          setUploadError("");
+
+          toast.info(message);
+
+        } catch (err) {
+          const errorMsg = "Upload: Could not connect to the server.";
+          toast.info(errorMsg);
+        }
+
+        try {
+
+          const analyzeFastaResponse = await fetch("http://localhost:5000/analyze-fasta", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ fileId: data.fileId }),
+          });
+
+          if (!analyzeFastaResponse.ok) {
+            const analyzeErrData = await analyzeFastaResponse.json();
+            const errorMsg = analyzeErrData.error || "Processing FASTA failed";
+            toast.info(errorMsg);
+            return;
+          }
+
+          const message = `${data.filename} processed successfully.`;
+          setAnalyzeError("");
+
+          toast.info(message);
+
+        } catch (err) {
+          const errorMsg = "FASTA Analysis: Could not connect to the server.";
+          toast.info(errorMsg);
+        }
     };
 
     return (
@@ -41,7 +94,6 @@ export default function UploadPage() {
           <button type="submit">Upload</button>
         </form>
       )}
-      {message && <p>{message}</p>}
     </div>
   );
 }
