@@ -77,6 +77,7 @@ model FastqAnalysis {
   userId          Int
   fastqFile       File      @relation("FastqFile", fields: [fastqFileId], references: [id], onDelete: Cascade)
   fastqFileId     Int
+  sequenceCount   Int
   result          String
   createdAt       DateTime  @default(now())
 }

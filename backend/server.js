@@ -353,16 +353,17 @@ app.post("/analyze-fasta", authenticateToken, async (req, res) => {
     }
 });
 
-app.post("/analyze", authenticateToken, async (req, res) => {
-    const { primerFileId, referenceFileId } = req.body;
+app.post("/create-fastq", authenticateToken, async (req, res) => {
+    const { primerFileId, referenceFileId, outputFilename, sequenceCount } = req.body;
     const userId = req.user?.userId;
 
-    const existing = await prisma.fastaAnalysis.findUnique({
+    const existing = await prisma.fastqAnalysis.findUnique({
         where: {
-            userId_primerFileId_referenceFileId: {
+            userId_primerFileId_referenceFileId_sequenceCount: {
                 userId,
                 primerFileId,
                 referenceFileId,
+                sequenceCount,
             },
         },
     });
@@ -388,12 +389,30 @@ app.post("/analyze", authenticateToken, async (req, res) => {
             return res.status(404).json({ error: "Primer or reference file not found or not owned by user" });
         }
 
+        let finalOutputFilename;
+        if (outputFilename) {
+            const parsed = path.parse(outputFilename);
+
+            if (parsed.ext === ".gz"){
+                finalOutputFilename = outputFilename;
+            } else if (parsed.ext === ".fastq") {
+                finalOutputFilename = `${outputFilename}.gz`;
+            } else {
+                finalOutputFilename = `${outputFilename}.fastq.gz`
+            }
+        } else {
+            finalOutputFilename = `${path.parse(referenceFile.filename).name}_${path.parse(primerFile.filename).name}.fastq.gz`;
+        }
+        
         const primerPath = path.join(__dirname, "uploads", primerFile.category, primerFile.filename);
         const referencePath = path.join(__dirname, "uploads", referenceFile.category, referenceFile.filename);
-        const scriptPath = path.join(__dirname, "scripts", "process_fasta.py");
+        const outputPath = path.join(__dirname, "uploads", "fastq", finalOutputFilename);
+        const scriptPath = path.join(__dirname, "scripts", "create_fastq.py");
         const venvPython = path.join(__dirname, "venv", "Scripts", "python.exe");
 
-        execFile(venvPython, [scriptPath, primerPath, referencePath], async (err, stdout, stderr) => {
+        fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+
+        execFile(venvPython, [scriptPath, primerPath, referencePath, outputPath, sequenceCount], async (err, stdout, stderr) => {
             if (err) {
                 console.error("Python error:", stderr);
                 return res.status(500).json({ error: "Processing failed" });
@@ -406,40 +425,53 @@ app.post("/analyze", authenticateToken, async (req, res) => {
                 console.error("Failed to parse JSON from Python script:", stdout);
                 return res.status(500).json({ error: "Invalid analysis result format "});
             }
-            await Promise.all([
-                prisma.metadata.upsert({
-                    where: { fileId: primerFile.id },
-                    update: {
-                        key: "analysis_result",
-                        value: `Found ${result.primer_count} primer sequences.`,
-                    },
-                    create: {
-                        fileId: primerFile.id,
-                        key: "analysis_result",
-                        value: `Found ${result.primer_count} primer sequences.`,
-                    },
-                }),
-                prisma.metadata.upsert({
-                    where: { fileId: referenceFile.id },
-                    update: {
-                        key: "analysis_result",
-                        value: `Found ${result.reference_count} reference sequences.`,
-                    },
-                    create: {
-                        fileId: referenceFile.id,
-                        key: "analysis_result",
-                        value: `Found ${result.reference_count} reference sequences.`,
-                    },
-                }),
-            ]);
 
-            res.json({
-                message: "Analysis complete",
-                "result": {
-                    "primer_count": result.primer_count,
-                    "reference_count": result.primer_count
+            try {
+                const fastqFile = await prisma.file.create({
+                    data: {
+                        filename: finalOutputFilename,
+                        path: outputPath,
+                        category: "FASTQ",
+                        userId,
+                    },
+                });
+
+                await prisma.metadata.createMany({
+                    data: [
+                        {
+                            fileId: fastqFile.id,
+                            key: "analysis_result",
+                            value: `Created from ${referenceFile.filename} and ${primerFile.filename}`,
+                        },
+                        {
+                            fileId: fastqFile.id,
+                            key: "sequence_count",
+                            value: `${result.sequence_count}`,
+                        },
+                    ],
+                });
+
+                await prisma.fastqAnalysis.create({
+                    data: {
+                        userId,
+                        primerFileId,
+                        referenceFileId,
+                        result: JSON.stringify(result),
+                    },
+                });
+
+                res.json({
+                    message: "FASTQ file created successfully",
+                    file: {
+                        id: fastqFile.id,
+                        filename: fastqFile.filename,
+                        metadata: result,
                 },
             });
+            } catch (err) {
+                console.error("Database error:", err);
+                res.status(500).json({ error: "Failed to save FASTQ file"});
+            }            
         });
     } catch (err) {
         console.error("Server error:", err);
