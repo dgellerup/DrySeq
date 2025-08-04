@@ -8,4 +8,4 @@
 # DrySeq
 ### A Web Application by Dane Gellerup
 
-DrySeq is a bioinformatics tool that allows users to conduct virtual, mock wetlab experiments, including PCR (in development) and Next Generation Sequencing.
+DrySeq is a bioinformatics tool that allows users to conduct virtual, mock wetlab experiments, including PCR (in development) and Next Generation Sequencing. Users can create an account, upload FASTA files (Primers FASTA, Genomic FASTA), generate FASTQ files from Primer and Genomic FASTA data, download and delete files.
