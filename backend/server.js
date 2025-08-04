@@ -544,9 +544,10 @@ app.post("/create-fastq", authenticateToken, async (req, res) => {
                             fastqFileR2Id: fileR2.id,
                         },
                     });
-                    console.log("FASTQ file created successfully");
+
                     res.json({
-                        message: "FASTQ file created successfully",
+                        message: "FASTQ files created successfully",
+                        sampleName: safeName,
                         files: [fileR1, fileR2],
                         paths: { r1: result.r1_path, r2: result.r2_path },
                     });

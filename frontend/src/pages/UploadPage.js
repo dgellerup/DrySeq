@@ -35,7 +35,6 @@ export default function UploadPage() {
           }
 
           data = await uploadFastaResponse.json();
-          console.log("Upload response:", data);
 
           const message = `Uploaded to ${data.category}`;
 
@@ -47,8 +46,6 @@ export default function UploadPage() {
         }
 
         try {
-          console.log("Calling analyze-fasta with:", { fileId: data.fileId });
-
           const analyzeFastaResponse = await fetch("http://localhost:5000/analyze-fasta", {
             method: "POST",
             headers: {
@@ -57,10 +54,6 @@ export default function UploadPage() {
             },
             body: JSON.stringify({ fileId: data.fileId }),
           });
-
-          console.log("Analyze response status:", analyzeFastaResponse.status);
-          const raw = await analyzeFastaResponse.text();
-          console.log("Analyze raw response:", raw);
           
           if (!analyzeFastaResponse.ok) {
             const analyzeErrData = await analyzeFastaResponse.json();
