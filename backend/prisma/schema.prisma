@@ -75,9 +75,21 @@ model FastqAnalysis {
   id              Int       @id @default(autoincrement())
   user            User      @relation(fields: [userId], references: [id])
   userId          Int
+
+  sampleName      String
   fastqFile       File      @relation("FastqFile", fields: [fastqFileId], references: [id], onDelete: Cascade)
   fastqFileId     Int
+  
+  primerFile      File      @relation("PrimerFile", fields: [primerFileId], references: [id], onDelete: Cascade)
+  primerFileId    Int
+
+  referenceFile   File      @relation("ReferenceFile", fields: [referenceFileId], references: [id], onDelete: Cascade)
+  referenceFileId Int
+
   sequenceCount   Int
+  
   result          String
   createdAt       DateTime  @default(now())
+
+  @@unique([userId])
 }
