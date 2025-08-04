@@ -14,7 +14,7 @@ export default function AnalyzePage() {
     useEffect(() => {
         const fetchFiles = async () => {
             try {
-                const res = await fetch("http://localhost:5000/files", {
+                const res = await fetch("http://localhost:5000/fasta-files", {
                     headers: { Authorization: `Bearer ${token}` },
                 });
 
@@ -24,10 +24,16 @@ export default function AnalyzePage() {
                     return;
                 }
 
-                const data = await res.json();
-                console.log("Fetched files:", data);
-                setPrimerFiles(data.primer || []);
-                setReferenceFiles(data.genomic || []);
+                const files = await res.json();
+                console.log("Fetched fasta files:", files);
+
+                const primers = files.filter(file => file.category === "PRIMER");
+                console.log("Primers:", primers);
+                const genomics = files.filter(file => file.category === "GENOMIC");
+                console.log("Genomics", genomics);
+
+                setPrimerFiles(primers);
+                setReferenceFiles(genomics);
             } catch (err) {
                 console.error("Error fetching files:", err);
             }
@@ -48,7 +54,7 @@ export default function AnalyzePage() {
         setResult("");
 
         try {
-            const res = await fetch("http://localhost:5000/analyze", {
+            const res = await fetch("http://localhost:5000/create-fastq", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -57,6 +63,8 @@ export default function AnalyzePage() {
                 body: JSON.stringify({
                     primerFileId: primerFile,
                     referenceFileId: referenceFile,
+                    sampleName: "test-123",
+                    sequenceCount: 200,
                 }),
             });
 

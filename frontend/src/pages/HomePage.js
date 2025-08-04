@@ -5,7 +5,7 @@ export default function HomePage() {
     const { token } = useAuth();
 
     const [fastaFiles, setFastaFiles] = useState([]);
-    const [fastqFiles, setFastqFiles] = useState([]);
+    const [fastqAnalyses, setFastqAnalyses] = useState([]);
 
     const fetchFastaFiles = async() => {
         try {
@@ -19,13 +19,13 @@ export default function HomePage() {
         }
     };
 
-    const fetchFastqFiles = async() => {
+    const fetchFastqAnalyses = async() => {
         try {
             const res = await fetch("http://localhost:5000/fastq-files", {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json();
-            setFastqFiles(data);
+            setFastqAnalyses(data);
         } catch (err) {
              console.error("Failed to fetch FASTQ files:", err);
         }
@@ -35,10 +35,10 @@ export default function HomePage() {
         if (!token) return;
 
         fetchFastaFiles();
-        fetchFastqFiles();
+        fetchFastqAnalyses();
 
         // const interval = setInterval(() => {
-        //     fetchFastqFiles();
+        //     fetchFastqAnalyses();
         // }, 15000);
 
         // return () => clearInterval(interval);
@@ -58,64 +58,46 @@ export default function HomePage() {
                 {fastaFiles.map((file) => (
                     <li key={file.id} className="border p-2 rounded">
                         <div>
-                            <strong>{file.filename}</strong> - {file.category} - {file.analysisResult || "Processing"}
+                            <strong>{file.filename}</strong> - {file.category} - {file.fastaAnalysis?.result || "Processing"}
                         </div>
                         <div className="text-sm text-gray-600">
                             Uploaded: {new Date(file.uploadedAt).toLocaleString()}
                         </div>
-                        {file.metadata?.content && (
-                            <div className="mt-2">
-                                <em>Metadata:</em> <pre>{file.metadata.content}</pre>
-                            </div>
-                        )}
                         {file.primerAnalyses?.length > 0 && (
                             <div className="mt-2">
                                 <strong>Used as Primer in:</strong>
                                 <ul className="ml-4 list-disc">
                                     {file.primerAnalyses.map((a) => (
                                         <li key={a.id}>
-                                            vs {a.referenceFile?.filename} - <pre>{a.result}</pre>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-                        {file.referenceAnalyses?.length > 0 && (
-                            <div className="mt-2">
-                                <strong>Used as Reference in:</strong>
-                                <ul className="ml-4 list-disc">
-                                    {file.referenceAnalyses.map((a) => (
-                                        <li key={a.id}>
-                                            with {a.primerFile?.filename} - <pre>{a.result}</pre>
+                                            {a.sampleName}: vs {a.fastqFileR1.filename} + {a.fastqFileR2.filename}
                                         </li>
                                     ))}
                                 </ul>
                             </div>
                         )}
                     </li>
-                ))}
-            </ul>
+                    ))}
+                </ul>
 
-            <h2 className="text-xl font-bold met-10 mb-4">Generated FASTQ Files ({ fastqFiles.length }/3)</h2>    
+            <h2 className="text-xl font-bold mt-10 mb-4">Generated FASTQ Files ({ fastqAnalyses.length }/3)</h2>    
             <ul className="space-y-4">
-                {fastqFiles.length == 0 && <p>No FASTQ Files Generated Yet</p>}
-                {fastqFiles.map((file) => (
-                    <li key={file.id} className="border p-2 rounded">
-                        <div><strong>{file.filename}</strong></div>
-                        <div className="text-sm text-gray-600">
-                            Generated: {new DataTransfer(file.uploadedAt).toLocaleString()}
+                {fastqAnalyses.length === 0 && <p>No FASTQ Files Generated Yet</p>}
+                {fastqAnalyses.map((analysis) => (
+                    <li key={analysis.id} className="border p-2 rounded">
+                        <div>
+                            <strong>{analysis.sampleName}</strong> - {analysis.sequenceCount} reads
                         </div>
-                        {file.metadata?.content && (
-                            <div className="mt-2">
-                                <em>Metadata:</em> <pre>{file.metadata.content}</pre>
-                            </div>
-                        )}
-                        {file.fastqAnalyses?.length > 0 && (
-                            <div className="mt-2">
-                                <strong>Analysis Result:</strong>
-                                <pre>{file.fastqAnalyses[0].result}</pre>
-                            </div>
-                        )}
+                        <div className="text-sm text-gray-600">
+                            R1: {analysis.fastqFileR1.filename}<br />
+                            R2: {analysis.fastqFileR2.filename}<br />
+                        </div>
+                        <div className="text-sm text-gray-500 mt-1">
+                            Primer: {analysis.primerFile.filename}<br />
+                            Reference: {analysis.referenceFile.filename}
+                        </div>
+                        <div className="text-xs text-gray-400 mt-1">
+                            Created: {new Date(analysis.createdAt).toLocaleString()}
+                        </div>
                     </li>
                 ))}
             </ul>
