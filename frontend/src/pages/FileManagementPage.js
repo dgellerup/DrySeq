@@ -49,27 +49,50 @@ export default function FileManagementPage() {
 
     }, [token, fetchFastaFiles, fetchFastqAnalyses]);
 
-    const handleDownload = async (fileId) => {
-        try {
-            const file =
-                fastaFiles.find((f) => f.id === fileId) ||
-                FastqAnalyses.find((f) => f.id === fileId);
+const handleDownload = async (fileId) => {
+    try {
+        const fastaFile = fastaFiles.find((f) => f.id === fileId);
+        const fastqAnalysis = FastqAnalyses.find((a) => a.id === fileId);
 
-            const res = await fetch(`http://localhost:5000/download/${fileId}`, {
+        if (fastaFile) {
+            // Single file download (FASTA)
+            const res = await fetch(`http://localhost:5000/download/${fastaFile.id}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const blob = await res.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = file.filename; // optionally replace with dynamic filename
+            a.download = fastaFile.filename;
             document.body.appendChild(a);
             a.click();
             a.remove();
-        } catch (err) {
-            console.error("Failed to download file:", err);
+        } else if (fastqAnalysis) {
+            // Download both R1 and R2 files
+            const r1 = fastqAnalysis.fastqFileR1;
+            const r2 = fastqAnalysis.fastqFileR2;
+
+            for (const file of [r1, r2]) {
+                const res = await fetch(`http://localhost:5000/download/${file.id}`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = file.filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            }
+        } else {
+            console.warn("File or analysis not found");
         }
-    };
+    } catch (err) {
+        console.error("Failed to download file(s):", err);
+        toast.error("Download failed.");
+    }
+};
 
     const handleDeleteFastaClick = (file) => {
         setFileToDelete(file);
