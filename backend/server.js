@@ -169,6 +169,9 @@ app.post("/upload", authenticateToken, upload.single("file"), async (req, res) =
     });
 
     if (existing) {
+        // Clean up orphaned file
+        await fs.promises.unlink(file.path).catch(console.error);
+
         return res.status(400).json({
             error: `File ${normalizedName} already exists`,
         });
