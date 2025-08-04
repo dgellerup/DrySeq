@@ -11,9 +11,10 @@ export default function FileManagementPage() {
     const { token } = useAuth();
 
     const [fastaFiles, setFastaFiles] = useState([]);
-    const [fastqFiles, setFastqFiles] = useState([]);
+    const [FastqAnalyses, setFastqAnalyses] = useState([]);
 
     const [fileToDelete, setFileToDelete] = useState(null);
+    const [analysisToDelete, setAnalysisToDelete] = useState(null);
     const [confirmOpen, setConfirmOpen] = useState(false);
 
     const fetchFastaFiles = useCallback(async() => {
@@ -28,13 +29,13 @@ export default function FileManagementPage() {
         }
     }, [token]);
 
-    const fetchFastqFiles = useCallback(async() => {
+    const fetchFastqAnalyses = useCallback(async() => {
         try {
             const res = await fetch("http://localhost:5000/fastq-files", {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json();
-            setFastqFiles(data);
+            setFastqAnalyses(data);
         } catch (err) {
              console.error("Failed to fetch FASTQ files:", err);
         }
@@ -44,50 +45,80 @@ export default function FileManagementPage() {
         if (!token) return;
 
         fetchFastaFiles();
-        fetchFastqFiles();
+        fetchFastqAnalyses();
 
-    }, [token, fetchFastaFiles, fetchFastqFiles]);
+    }, [token, fetchFastaFiles, fetchFastqAnalyses]);
 
-    const handleDownload = async (fileId) => {
-        try {
-            const file =
-                fastaFiles.find((f) => f.id === fileId) ||
-                fastqFiles.find((f) => f.id === fileId);
+const handleDownload = async (fileId) => {
+    try {
+        const fastaFile = fastaFiles.find((f) => f.id === fileId);
+        const fastqAnalysis = FastqAnalyses.find((a) => a.id === fileId);
 
-            const res = await fetch(`http://localhost:5000/download/${fileId}`, {
+        if (fastaFile) {
+            // Single file download (FASTA)
+            const res = await fetch(`http://localhost:5000/download/${fastaFile.id}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const blob = await res.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = file.filename; // optionally replace with dynamic filename
+            a.download = fastaFile.filename;
             document.body.appendChild(a);
             a.click();
             a.remove();
-        } catch (err) {
-            console.error("Failed to download file:", err);
-        }
-    };
+        } else if (fastqAnalysis) {
+            // Download both R1 and R2 files
+            const r1 = fastqAnalysis.fastqFileR1;
+            const r2 = fastqAnalysis.fastqFileR2;
 
-    const handleDeleteClick = (file) => {
+            for (const file of [r1, r2]) {
+                const res = await fetch(`http://localhost:5000/download/${file.id}`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = file.filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            }
+        } else {
+            console.warn("File or analysis not found");
+        }
+    } catch (err) {
+        console.error("Failed to download file(s):", err);
+        toast.error("Download failed.");
+    }
+};
+
+    const handleDeleteFastaClick = (file) => {
         setFileToDelete(file);
         setConfirmOpen(true);
     }
 
-    const handleDelete = async (fileId) => {
+    const handleDeleteFastqClick = (analysis) => {
+        setAnalysisToDelete(analysis);
+        setConfirmOpen(true);
+    }
+
+    const handleDeleteFile = async () => {
+        if (!fileToDelete) return;
+
         try {
             const file =
-                fastaFiles.find((f) => f.id === fileId) ||
-                fastqFiles.find((f) => f.id === fileId);
+                fastaFiles.find((f) => f.id === fileToDelete.id) ||
+                FastqAnalyses.find((f) => f.id === fileToDelete.id);
 
-            await fetch(`http://localhost:5000/delete/${fileId}`, {
+            await fetch(`http://localhost:5000/delete/${fileToDelete.id}`, {
                 method: "DELETE",
                 headers: { Authorization: `Bearer ${token}` },
             });
 
             await fetchFastaFiles();
-            await fetchFastqFiles();
+            await fetchFastqAnalyses();
 
             
             if (file) {
@@ -105,19 +136,43 @@ export default function FileManagementPage() {
         }
     };
 
-    const getSequenceCount = (file) => {
-        console.log("Metadata for file:", file.metadata);
-        const foundMeta = file.metadata?.find((m) => m.key === "analysis_result");
-        console.log("Found metadata:", foundMeta);
-        if (!foundMeta) return "N/A";
+    const handleDeleteAnalysis = async () => {
+        if (!analysisToDelete) return;
 
-        const match = foundMeta.value.match(/Found (\d+) sequences/i);
-        return match ? parseInt(match[1], 10) : "N/A";
+        try {
+            await fetch(`http://localhost:5000/delete-fastq-analysis/${analysisToDelete.id}`, {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${token}` },
+            });
+
+            toast.info("FASTQ analysis and files deleted.");
+            await fetchFastqAnalyses();
+        } catch (err) {
+            console.error("Failed to delete analysis:", err);
+            toast.error("Failed to delete FASTQ analysis.");
+        } finally {
+            setConfirmOpen(false);
+            setAnalysisToDelete(null);
+        }
+    }
+
+    const getSequenceCount = (file) => {
+        
+        if (file.category === "GENOMIC" || file.category === "PRIMER") {
+            const match = file.fastaAnalysis?.result?.match(/Found (\d+) sequences/i);
+            return match ? parseInt(match[1], 10) : "N/A";
+        }
+        
+        if (file.fastqAnalyses?.length > 0) {
+            return file.fastqAnalyses[0].sequenceCount ?? "N/A";
+        }
+
+        return "N/A";
     };
 
-    const renderTable = (files, label) => (
+    const renderFastasTable = (files) => (
         <>
-            <h2 className="text-xl font-bold my-4">{label} ({files.length})</h2>
+            <h2 className="text-xl font-bold my-4">FASTA Files ({files.length})</h2>
             <table className="w-full table-auto border-collapse">
                 <thead>
                     <tr className="bg-gray-200 text-left">
@@ -134,7 +189,7 @@ export default function FileManagementPage() {
                                 </td>
                             </tr>
                             ) : (
-                            files.map((file, index) => (
+                    files.map((file, index) => (
                         <tr
                             key={file.id}
                             className="border-t"
@@ -152,7 +207,60 @@ export default function FileManagementPage() {
                                 <button
                                     title="Delete"
                                     className="delete-button"
-                                    onClick={() => handleDeleteClick(file)}
+                                    onClick={() => handleDeleteFastaClick(file)}
+                                >
+                                    <Trash2 size={18} />
+                                </button>
+                            </td>
+                        </tr>
+                        ))
+                    )}
+                </tbody>
+            </table>
+        </>
+    );
+
+    const renderFastqsTable = (analyses) => (
+        <>
+            <h2 className="text-xl font-bold my-4">FASTQ Files ({analyses.length})</h2>
+            <table className="w-full table-auto border-collapse">
+                <thead>
+                    <tr className="bg-gray-200 text-left">
+                        <th className="p-2 border">Filename</th>
+                        <th className="p-2 border text-center">Sequences</th>
+                        <th className="p-2 border text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {analyses.length === 0 ? (
+                            <tr>
+                                <td colSpan={3} className="p-2 text-gray-500 italic text-center">
+                                No files found.
+                                </td>
+                            </tr>
+                            ) : (
+                    analyses.map((analysis, index) => (
+                        <tr
+                            key={analysis.id}
+                            className="border-t"
+                        >
+                            <td className="p-2 border">
+                                R1: {analysis.fastqFileR1.filename}<br />
+                                R2: {analysis.fastqFileR2.filename}<br />
+                            </td>
+                            <td className="p-2 border">{analysis.sequenceCount}</td>
+                            <td className="p-2 border space-x-2">
+                                <button
+                                    title="Download"
+                                    className="download-button"
+                                    onClick={() => handleDownload(analysis.id)}
+                                >
+                                    <Download size={18} />
+                                </button>
+                                <button
+                                    title="Delete"
+                                    className="delete-button"
+                                    onClick={() => handleDeleteFastqClick(analysis)}
                                 >
                                     <Trash2 size={18} />
                                 </button>
@@ -167,15 +275,27 @@ export default function FileManagementPage() {
 
     return (
         <div className="p-4">
-            {renderTable(fastaFiles, "FASTA Files")}
-            {renderTable(fastqFiles, "FASTQ Files")}
+            {renderFastasTable(fastaFiles)}
+            {renderFastqsTable(FastqAnalyses)}
 
             
             <ConfirmDialogModal
                 isOpen={confirmOpen}
-                onConfirm={() => handleDelete(fileToDelete.id)}
-                onCancel={() => setConfirmOpen(false)}
-                message={`Are you sure you want to delete "${fileToDelete?.filename}"?`}
+                onConfirm={
+                    fileToDelete
+                        ? () => handleDeleteFile(fileToDelete.id)
+                        : () => handleDeleteAnalysis()
+                    }
+                onCancel={() => {
+                    setConfirmOpen(false);
+                    setFileToDelete(null);
+                    setAnalysisToDelete(null);
+                }}
+                message={
+                    fileToDelete
+                        ? `Are you sure you want to delete "${fileToDelete?.filename}"?`
+                        : `Are you sure you want to delete the FASTQ analysis for "${analysisToDelete?.fastqFileR1?.filename}" + "${analysisToDelete?.fastqFileR2?.filename}"?`
+                }
             />
         </div>
     );

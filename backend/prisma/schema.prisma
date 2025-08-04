@@ -14,69 +14,74 @@ datasource db {
 }
 
 model User {
-  id                Int       @id @default(autoincrement())
-  username          String    @unique
-  password          String
-  files             File[]
-  fastaAnalyses     FastaAnalysis[]
-  fastqAnalyses     FastqAnalysis[]
+  id            Int             @id @default(autoincrement())
+  username      String          @unique
+  password      String
+  files         File[]
+  fastaAnalyses FastaAnalysis[]
+  fastqAnalyses FastqAnalysis[]
 }
 
 enum FileCategory {
   GENOMIC
-  PRIMER 
-  FASTQ 
+  PRIMER
+  FASTQ
 }
 
 model File {
-  id                  Int             @id @default(autoincrement())
-  filename            String          @unique
-  path                String
-  category            FileCategory
-  uploadedAt          DateTime        @default(now())
-  userId              Int
-  user                User            @relation(fields: [userId], references: [id])
-  metadata            Metadata[]
+  id         Int          @id @default(autoincrement())
+  filename   String       @unique
+  path       String
+  category   FileCategory
+  uploadedAt DateTime     @default(now())
+  userId     Int
+  user       User         @relation(fields: [userId], references: [id])
 
   // Relations for different analysis types
-  primerAnalyses      FastaAnalysis[] @relation("PrimerFile")
-  referenceAnalyses   FastaAnalysis[] @relation("ReferenceFile")
-  fastqAnalyses       FastqAnalysis[] @relation("FastqFile")
-}
+  fastaAnalysis   FastaAnalysis? @relation("FastaFile")
+  fastqAnalysisR1 FastqAnalysis? @relation("FastqFileR1")
+  fastqAnalysisR2 FastqAnalysis? @relation("FastqFileR2")
 
-model Metadata {
-  id          Int       @id @default(autoincrement())
-  file        File      @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  fileId      Int       @unique
-  key         String
-  value       String
-
-  @@unique([fileId, key])
+  primerAnalyses    FastqAnalysis[] @relation("PrimerFile")
+  referenceAnalyses FastqAnalysis[] @relation("ReferenceFile")
 }
 
 model FastaAnalysis {
-  id              Int       @id @default(autoincrement())
-  user            User      @relation(fields: [userId], references: [id])
-  userId          Int
+  id     Int  @id @default(autoincrement())
+  user   User @relation(fields: [userId], references: [id])
+  userId Int
 
-  primerFile      File      @relation("PrimerFile", fields: [primerFileId], references: [id], onDelete: Cascade)
-  primerFileId    Int
+  fastaFile   File @relation("FastaFile", fields: [fastaFileId], references: [id], onDelete: Cascade)
+  fastaFileId Int  @unique
 
-  referenceFile   File      @relation("ReferenceFile", fields: [referenceFileId], references: [id], onDelete: Cascade)
-  referenceFileId Int
+  result    String
+  createdAt DateTime @default(now())
 
-  result          String
-  createdAt       DateTime  @default(now())
-
-  @@unique([userId, primerFileId, referenceFileId]) // prevents duplicate runs
+  @@unique([userId, fastaFileId])
 }
 
 model FastqAnalysis {
-  id              Int       @id @default(autoincrement())
-  user            User      @relation(fields: [userId], references: [id])
-  userId          Int
-  fastqFile       File      @relation("FastqFile", fields: [fastqFileId], references: [id], onDelete: Cascade)
-  fastqFileId     Int
-  result          String
-  createdAt       DateTime  @default(now())
+  id     Int  @id @default(autoincrement())
+  user   User @relation(fields: [userId], references: [id])
+  userId Int
+
+  sampleName    String
+  sequenceCount Int
+
+  fastqFileR1   File @relation("FastqFileR1", fields: [fastqFileR1Id], references: [id], onDelete: Cascade)
+  fastqFileR1Id Int  @unique
+
+  fastqFileR2   File @relation("FastqFileR2", fields: [fastqFileR2Id], references: [id], onDelete: Cascade)
+  fastqFileR2Id Int  @unique
+
+  primerFile   File @relation("PrimerFile", fields: [primerFileId], references: [id], onDelete: Cascade)
+  primerFileId Int
+
+  referenceFile   File @relation("ReferenceFile", fields: [referenceFileId], references: [id], onDelete: Cascade)
+  referenceFileId Int
+
+  result    String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, sampleName, primerFileId, referenceFileId, sequenceCount])
 }

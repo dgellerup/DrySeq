@@ -1,0 +1,69 @@
+.analyze-container {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 24px;
+    background-color: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    font-family: sans-serif;
+}
+
+.analyze-title {
+    text-align: center;
+    font-size: 24px;
+    font-weight: bold;
+    margin-bottom: 24px;
+}
+
+.analyze-label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 6px;
+}
+
+.analyze-select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 14px;
+    margin-bottom: 20px;
+    background-color: #fafafa;
+}
+
+.analyze-button {
+    width: 100%;
+    padding: 12px;
+    background-color: #3b82f6;
+    color: white;
+    font-weight: bold;
+    font-size: 14px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.analyze-button:hover {
+    background-color: #2563eb;
+}
+
+.analyze-button:disabled {
+    background-color: #93c5fd;
+    cursor: not-allowed;
+}
+
+.analyze-result {
+    margin-top: 24px;
+    padding: 16px;
+    background-color: #f4f4f4;
+    border-radius: 8px;
+    font-size: 14px;
+    color: #333;
+}
+
+.analyze-login-message {
+    text-align: center;
+    color: #777;
+    font-style: italic;
+}
