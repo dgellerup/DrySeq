@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from "react";
+import { toast } from "react-toastify";
+
 import { useAuth } from "../contexts/AuthContext";
+
+import "./AnalyzePage.css";
 
 export default function AnalyzePage() {
     const [primerFiles, setPrimerFiles] = useState([]);
@@ -25,12 +29,9 @@ export default function AnalyzePage() {
                 }
 
                 const files = await res.json();
-                console.log("Fetched fasta files:", files);
 
                 const primers = files.filter(file => file.category === "PRIMER");
-                console.log("Primers:", primers);
                 const genomics = files.filter(file => file.category === "GENOMIC");
-                console.log("Genomics", genomics);
 
                 setPrimerFiles(primers);
                 setReferenceFiles(genomics);
@@ -74,28 +75,38 @@ export default function AnalyzePage() {
             }
 
             const data = await res.json();
+
+            toast.info(
+                <div>
+                    {data.message} <br /> {data.sampleName}
+                </div>
+                )
+
             setResult(data.result);
         } catch (err) {
             setResult(`Error: ${err.message}`);
+            const errorMsg = `FASTQ Files Creation Failed - ${err.message}`;
+            toast.info(errorMsg);
         } finally {
             setLoading(false);
         }
     };
 
 return (
-    <div>
-        <h2>Run FASTA Analysis</h2>
+    <div className="analyze-container">
+        <h2 className="analyze-title">Create Paired FASTQs</h2>
         {!token ? (
             <p>Please log in</p>
         ) : (
             <>
                 <div>
-                    <label>Primer File:</label>
+                    <label className="analyze-label">Primer File:</label>
                     <select
                         value={primerFile}
                         onChange={(e) => setPrimerFile(parseInt(e.target.value))}
+                        className="analyze-select"
                     >
-                        <option value="">Select Primer File</option>
+                        <option value="" disabled hidden>Select Primer File</option>
                         {primerFiles.map((file) => (
                             <option key={file.id} value={file.id}>
                                 {file.filename}
@@ -104,13 +115,14 @@ return (
                     </select>
                 </div>
 
-                <div style={{ marginTop: "15px" }}>
-                    <label>Reference File:</label>
+                <div>
+                    <label className="analyze-label">Reference File:</label>
                     <select
                         value={referenceFile}
                         onChange={(e) => setReferenceFile(parseInt(e.target.value))}
+                        className="analyze-select"
                     >
-                        <option value="">Select Reference File</option>
+                        <option value="" disabled hidden>Select Reference File</option>
                         {referenceFiles.map((file) => (
                             <option key={file.id} value={file.id}>
                                 {file.filename}
@@ -124,22 +136,9 @@ return (
                     disabled={loading}
                     style={{ marginTop: "20px" }}
                 >
-                    {loading ? "Analyzing..." : "Analyze"}
+                    {loading ? "Creating..." : "Create FASTQs"}
                 </button>
 
-                {result && (
-                    <div
-                        style={{
-                            marginTop: "20px",
-                            background: "#f4f4f4",
-                            padding: "10px",
-                            whiteSpace: "pre-wrap",
-                        }}
-                    >
-                        <p>Primer count: {result.primer_count}</p>
-                        <p>Reference count: {result.reference_count}</p>
-                    </div>
-                )}
             </>
         )}
     </div>
