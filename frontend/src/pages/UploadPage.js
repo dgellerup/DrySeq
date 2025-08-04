@@ -6,10 +6,6 @@ import { useAuth } from "../contexts/AuthContext";
 export default function UploadPage() {
     const [file, setFile] = useState(null);
     const [category, setCategory] = useState("genomic");
-    const [uploadSuccess, setUploadSuccess] = useState("");
-    const [uploadError, setUploadError] = useState("");
-    const [analyzeSuccess, setAnalyzeSuccess] = useState("");
-    const [analyzeError, setAnalyzeError] = useState("");
 
     const { token } = useAuth();
 
@@ -39,9 +35,9 @@ export default function UploadPage() {
           }
 
           data = await uploadFastaResponse.json();
+          console.log("Upload response:", data);
 
           const message = `Uploaded to ${data.category}`;
-          setUploadError("");
 
           toast.info(message);
 
@@ -51,6 +47,7 @@ export default function UploadPage() {
         }
 
         try {
+          console.log("Calling analyze-fasta with:", { fileId: data.fileId });
 
           const analyzeFastaResponse = await fetch("http://localhost:5000/analyze-fasta", {
             method: "POST",
@@ -61,6 +58,10 @@ export default function UploadPage() {
             body: JSON.stringify({ fileId: data.fileId }),
           });
 
+          console.log("Analyze response status:", analyzeFastaResponse.status);
+          const raw = await analyzeFastaResponse.text();
+          console.log("Analyze raw response:", raw);
+          
           if (!analyzeFastaResponse.ok) {
             const analyzeErrData = await analyzeFastaResponse.json();
             const errorMsg = analyzeErrData.error || "Processing FASTA failed";
@@ -69,7 +70,6 @@ export default function UploadPage() {
           }
 
           const message = `${data.filename} processed successfully.`;
-          setAnalyzeError("");
 
           toast.info(message);
 
