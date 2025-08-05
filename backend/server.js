@@ -435,17 +435,18 @@ app.post("/analyze-fasta", authenticateToken, async (req, res) => {
 });
 
 app.post("/create-fastq", authenticateToken, async (req, res) => {
-    const { primerFileId, referenceFileId, sampleName, sequenceCount } = req.body;
+    const { primerFileId, referenceFileId, sampleName, sequenceCount, analysisName } = req.body;
     const userId = req.user?.userId;
 
     const existing = await prisma.fastqAnalysis.findUnique({
         where: {
-            userId_sampleName_primerFileId_referenceFileId_sequenceCount: {
+            userId_sampleName_primerFileId_referenceFileId_sequenceCount_analysisName: {
                 userId,
                 sampleName,
                 primerFileId,
                 referenceFileId,
                 sequenceCount,
+                analysisName
             },
         },
         include: {
@@ -557,6 +558,7 @@ app.post("/create-fastq", authenticateToken, async (req, res) => {
                             primerFileId,
                             referenceFileId,
                             result: JSON.stringify(result),
+                            analysisName,
                             sampleName,
                             sequenceCount,
                             fastqFileR1Id: fileR1.id,

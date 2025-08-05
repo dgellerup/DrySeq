@@ -1,0 +1,33 @@
+.fastq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fastq-row {
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  transition: box-shadow 0.2s;
+}
+
+.fastq-row.open {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.fastq-header {
+  padding: 12px 16px;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #eef2ff;
+  cursor: pointer;
+}
+
+.fastq-drawer {
+  padding: 12px 16px;
+  background-color: #f9fafb;
+  border-top: 1px solid #ddd;
+}
