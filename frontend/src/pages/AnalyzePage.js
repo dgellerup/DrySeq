@@ -10,7 +10,6 @@ export default function AnalyzePage() {
     const [referenceFiles, setReferenceFiles] = useState([]);
     const [primerFile, setPrimerFile] = useState("");
     const [referenceFile, setReferenceFile] = useState("");
-    const [result, setResult] = useState("");
     const [loading, setLoading] = useState("");
 
     const { token } = useAuth();
@@ -52,7 +51,6 @@ export default function AnalyzePage() {
         }
 
         setLoading(true);
-        setResult("");
 
         try {
             const res = await fetch("http://localhost:5000/create-fastq", {
@@ -82,9 +80,7 @@ export default function AnalyzePage() {
                 </div>
                 )
 
-            setResult(data.result);
         } catch (err) {
-            setResult(`Error: ${err.message}`);
             const errorMsg = `FASTQ Files Creation Failed - ${err.message}`;
             toast.info(errorMsg);
         } finally {

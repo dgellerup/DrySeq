@@ -358,7 +358,18 @@ app.get("/fastq-files", authenticateToken, async (req, res) => {
         },
     });
 
-    res.json(analyses);
+    const hydrated = analyses.map((analysis) => ({
+        ...analysis,
+        primerFilename: analysis.primerFile
+            ? analysis.primerFile.filename
+            : `${analysis.primerFilename} (Deleted)`,
+        
+        referenceFilename: analysis.referenceFile
+            ? analysis.referenceFile.filename
+            : `${analysis.referenceFilename} (Deleted)`
+    }));
+
+    res.json(hydrated);
 })
 
 app.post("/analyze-fasta", authenticateToken, async (req, res) => {
