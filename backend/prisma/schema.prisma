@@ -30,7 +30,7 @@ enum FileCategory {
 
 model File {
   id         Int          @id @default(autoincrement())
-  filename   String       @unique
+  filename   String       
   path       String
   category   FileCategory
   uploadedAt DateTime     @default(now())
@@ -44,6 +44,8 @@ model File {
 
   primerAnalyses    FastqAnalysis[] @relation("PrimerFile")
   referenceAnalyses FastqAnalysis[] @relation("ReferenceFile")
+
+  @@unique([filename, userId])
 }
 
 model FastaAnalysis {
