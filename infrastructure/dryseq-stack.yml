@@ -1,0 +1,158 @@
+# To deploy:
+# aws cloudformation deploy \
+#   --template-file dryseq-stack.yml \
+#   --stack-name dryseq-stack \
+#   --capabilities CAPABILITY_IAM \
+#   --parameter-overrides \
+#       KeyPairName=my-key \
+#       DBMasterUserPassword=supersecret \
+#   --profile personal
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: DrySeq Infra - Frontend, Uploads, EC2 backend, RDS DB
+
+Parameters:
+  KeyPairName:
+    Description: Name of an existing EC2 KeyPair for SSH access
+    Type: AWS::EC2::KeyPair::KeyName
+
+  DBMasterUserPassword:
+    Description: Password for RDS master user
+    Type: String
+    NoEcho: true
+    MinLength: 8
+
+Resources:
+
+  # === S3 Buckets ===
+
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: dryseq-frontend
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: "*"
+            Action: "s3:GetObject"
+            Resource: !Sub "${FrontendBucket.Arn}/*"
+
+  UploadsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: dryseq-uploads
+
+  # === IAM Role for EC2 ===
+
+  EC2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: dryseq-ec2-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2InstanceRole
+
+  # === Security Groups ===
+
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP + SSH
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow Postgres from EC2
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref EC2SecurityGroup
+
+  # === RDS PostgreSQL ===
+
+  DrySeqDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBName: dryseq
+      Engine: postgres
+      MasterUsername: dryseqadmin
+      MasterUserPassword: !Ref DBMasterUserPassword
+      DBInstanceClass: db.t3.micro
+      AllocatedStorage: 20
+      PubliclyAccessible: true
+      VPCSecurityGroups:
+        - !GetAtt DBSecurityGroup.GroupId
+
+  # === EC2 Instance ===
+
+  DrySeqBackend:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t3.micro
+      KeyName: !Ref KeyPairName
+      SecurityGroups:
+        - !Ref EC2SecurityGroup
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      ImageId: ami-0c02fb55956c7d316 # Amazon Linux 2 AMI (us-east-1)
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y git nodejs python3
+          npm install -g pm2
+          cd /home/ec2-user
+          git clone https://github.com/dgellerup/DrySeq.git
+          cd DrySeq/backend
+          npm install
+          pm2 start server.js
+
+Outputs:
+
+  FrontendBucketURL:
+    Description: URL to access the hosted React frontend
+    Value: !Sub "http://${FrontendBucket}.s3-website-${AWS::Region}.amazonaws.com"
+
+  EC2PublicIP:
+    Description: IP address of the backend EC2 server
+    Value: !GetAtt DrySeqBackend.PublicIp
+
+  RDSHost:
+    Description: RDS PostgreSQL host
+    Value: !GetAtt DrySeqDB.Endpoint.Address
