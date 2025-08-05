@@ -55,7 +55,10 @@ export default function HomePage() {
             <div className="p-4">
               <h2 className="text-xl font-bold mb-4">Uploaded FASTA Files ({ fastaFiles.length }/6)</h2>  
               <ul className="space-y-4">
-                {fastaFiles.map((file) => (
+                {fastaFiles.length === 0 ? (
+                    <p>No FASTA Files Uploaded Yet.</p>
+                ) : (
+                    fastaFiles.map((file) => (
                     <li key={file.id} className="border p-2 rounded">
                         <div>
                             <strong>{file.filename}</strong> - {file.category} - {file.fastaAnalysis?.result || "Processing"}
@@ -76,6 +79,7 @@ export default function HomePage() {
                             </div>
                         )}
                     </li>
+                    )
                     ))}
                 </ul>
 
@@ -92,8 +96,8 @@ export default function HomePage() {
                             R2: {analysis.fastqFileR2.filename}<br />
                         </div>
                         <div className="text-sm text-gray-500 mt-1">
-                            Primer: {analysis.primerFile.filename}<br />
-                            Reference: {analysis.referenceFile.filename}
+                            Primer: {analysis.primerFilename}<br />
+                            Reference: {analysis.referenceFilename}
                         </div>
                         <div className="text-xs text-gray-400 mt-1">
                             Created: {new Date(analysis.createdAt).toLocaleString()}
