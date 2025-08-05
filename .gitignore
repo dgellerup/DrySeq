@@ -1,0 +1,24 @@
+# AWS/Secrets
+.aws/
+*.pem
+.env
+.env.local
+.env.production
+*.log
+
+# System files
+.DS_Store
+Thumbs.db
+
+# OS trash
+*.swp
+*.swo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Ignore Terraform/CloudFormation state if added later
+*.tfstate
+*.tfstate.backup
