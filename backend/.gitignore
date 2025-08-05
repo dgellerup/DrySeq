@@ -31,3 +31,4 @@ tmp/
 # VS Code or IDE-specific
 .vscode/
 .idea/
+backend/prismaClient.js
