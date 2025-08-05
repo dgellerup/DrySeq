@@ -55,6 +55,12 @@ const FastqAnalysisRow = ({ analysis, onDelete, onDownload }) => {
                 <strong>R2 File:</strong> {analysis.fastqFileR2?.filename}
               </div>
               <div>
+                <strong>Primers File:</strong> {analysis.primerFilename}
+              </div>
+              <div>
+                <strong>Genomic File:</strong> {analysis.referenceFilename}
+              </div>
+              <div>
                 <strong>Created:</strong>{" "}
                 {new Date(analysis.createdAt).toLocaleString()}
               </div>

@@ -77,11 +77,11 @@ model FastqAnalysis {
   fastqFileR2       File      @relation("FastqFileR2", fields: [fastqFileR2Id], references: [id], onDelete: Cascade)
   fastqFileR2Id     Int       @unique
 
-  primerFile        File?     @relation("PrimerFile", fields: [primerFileId], references: [id], onDelete: Cascade)
+  primerFile        File?     @relation("PrimerFile", fields: [primerFileId], references: [id], onDelete: SetNull)
   primerFileId      Int?
   primerFilename    String
 
-  referenceFile     File?     @relation("ReferenceFile", fields: [referenceFileId], references: [id], onDelete: Cascade)
+  referenceFile     File?     @relation("ReferenceFile", fields: [referenceFileId], references: [id], onDelete: SetNull)
   referenceFileId   Int?
   referenceFilename String
 
