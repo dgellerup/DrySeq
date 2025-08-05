@@ -1,18 +1,39 @@
 import React, { useState } from "react";
+import { toast } from "react-toastify";
+
 import "./LoginModal.css"; // reuse styles
 
 export default function RegisterModal({ onClose, onRegisterSuccess }) {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
+    const [inviteCode, setInviteCode] = useState("")
     const [error, setError] = useState("");
 
     const handleRegister = async (e) => {
         e.preventDefault();
 
+        if (!inviteCode.trim()) {
+            setError("Invite code is required.");
+            toast.info(error);
+            return;
+        }
+
+        if (!username.trim()) {
+            setError("Username is required.");
+            toast.info(error);
+            return;
+        }
+
+        if (!password.trim()) {
+            setError("Password is required.");
+            toast.info(error);
+            return;
+        }
+
         const res = await fetch("http://localhost:5000/register", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username, password }),
+            body: JSON.stringify({ username, password, inviteCode }),
         });
 
         const data = await res.json();
@@ -39,6 +60,12 @@ export default function RegisterModal({ onClose, onRegisterSuccess }) {
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="Password"
+                        required
+                    />
+                    <input
+                        value={inviteCode}
+                        onChange={(e) => setInviteCode(e.target.value)}
+                        placeholder="Invite Code"
                         required
                     />
                     {error && <p className="error">{error}</p>}

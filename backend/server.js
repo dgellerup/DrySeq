@@ -56,7 +56,16 @@ function authenticateToken(req, res, next) {
 
 // Routes
 app.post("/register", async (req, res) => {
-    const { username, password } = req.body;
+    const { username, password, inviteCode } = req.body;
+
+    if (!inviteCode) {
+        return res.status(400).json({ error: "Invite code is required." });
+    }
+
+    const invite = await prisma.inviteCode.findUnique({ where: { code: inviteCode } });
+    if (!invite || invite.used) {
+        return res.status(403).json({ error: "Invalid or already-used invite code." });
+    }
 
     if (!username || !password){
         return res.status(400).json({ error: "Username and password required" });
@@ -70,12 +79,20 @@ app.post("/register", async (req, res) => {
             return res.status(400).json({ error: "User already exists" });
         }
 
-        const hashed = bcrypt.hashSync(password, 10);
+        const hashed = await bcrypt.hash(password, 10);
         const user = await prisma.user.create({
             data: {
                 username: normalizedUsername,
                 password: hashed,
             }
+        });
+
+        await prisma.inviteCode.update({
+            where: { code: inviteCode },
+            data: {
+                used: true,
+                usedById: user.id,
+            },
         });
 
         return res.status(201).json({ success: true, userId: user.id});

@@ -20,6 +20,8 @@ model User {
   files         File[]
   fastaAnalyses FastaAnalysis[]
   fastqAnalyses FastqAnalysis[]
+
+  InviteCode    InviteCode?     @relation("InviteCodeToUser")
 }
 
 enum FileCategory {
@@ -89,4 +91,13 @@ model FastqAnalysis {
   createdAt         DateTime @default(now())
 
   @@unique([userId, sampleName, primerFileId, referenceFileId, sequenceCount, analysisName])
+}
+
+model InviteCode {
+  id        Int       @id @default(autoincrement())
+  code      String    @unique
+  used      Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  usedBy    User?     @relation("InviteCodeToUser", fields: [usedById], references: [id])
+  usedById  Int?      @unique
 }
