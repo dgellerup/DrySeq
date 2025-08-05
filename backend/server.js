@@ -178,7 +178,7 @@ app.post("/upload", authenticateToken, upload.single("file"), async (req, res) =
     }
 
     // Rename and organize by category
-    const targetDir = path.join(__dirname, "uploads", category);
+    const targetDir = path.join(__dirname, "uploads", String(userId), category);
     const targetPath = path.join(targetDir, normalizedName);
 
     await fs.promises.mkdir(targetDir, { recursive: true });
@@ -287,8 +287,16 @@ app.delete("/delete-fastq-analysis/:id", authenticateToken, async (req, res) => 
             },
         });
 
+        try{
         fs.unlinkSync(analysis.fastqFileR1.path);
+        } catch (e) {
+            console.warn("R1 file already missing: ${analysis.fastqFileR1.path}")
+        }
+        try{
         fs.unlinkSync(analysis.fastqFileR2.path);
+        } catch (e) {
+            console.warn("R2 file already missing: ${analysis.fastqFileR2.path}")
+        }
 
         res.json({ success: true });
     } catch (err) {
@@ -367,7 +375,7 @@ app.post("/analyze-fasta", authenticateToken, async (req, res) => {
             return res.status(404).json({ error: "FASTA file not found."});
         }
 
-        const fastaPath = path.join(__dirname, "uploads", fastaFile.category, fastaFile.filename);
+        const fastaPath = path.join(__dirname, "uploads", String(userId), fastaFile.category, fastaFile.filename);
         const scriptPath = path.join(__dirname, "scripts", "process_fasta.py");
         const venvPython = path.join(__dirname, "venv", "Scripts", "python.exe");
 
@@ -465,9 +473,9 @@ app.post("/create-fastq", authenticateToken, async (req, res) => {
 
         const safeName = sampleName?.replace(/[^a-zA-Z0-9_\-]/g, "").replace(/\.(fastq|fq)(\.gz)?$/i, "");
         
-        const primerPath = path.join(__dirname, "uploads", primerFile.category, primerFile.filename);
-        const referencePath = path.join(__dirname, "uploads", referenceFile.category, referenceFile.filename);
-        const outputDir = path.join(__dirname, "uploads", "fastq");
+        const primerPath = path.join(__dirname, "uploads", String(userId), primerFile.category, primerFile.filename);
+        const referencePath = path.join(__dirname, "uploads", String(userId), referenceFile.category, referenceFile.filename);
+        const outputDir = path.join(__dirname, "uploads", String(userId), "fastq");
         const scriptPath = path.join(__dirname, "scripts", "create_fastq.py");
         const venvPython = path.join(__dirname, "venv", "Scripts", "python.exe");
 
@@ -542,6 +550,8 @@ app.post("/create-fastq", authenticateToken, async (req, res) => {
                             sequenceCount,
                             fastqFileR1Id: fileR1.id,
                             fastqFileR2Id: fileR2.id,
+                            primerFilename: primerFile.filename,
+                            referenceFilename: referenceFile.filename
                         },
                     });
 
