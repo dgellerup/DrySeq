@@ -26,7 +26,6 @@ tmp/
 
 # Prisma
 /generated/
-.prisma/
 
 # VS Code or IDE-specific
 .vscode/

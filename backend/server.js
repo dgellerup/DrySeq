@@ -26,7 +26,13 @@ app.use(cors({}));
 app.use(express.json());
 
 const { execFile } = require("child_process");
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+    datasources: {
+        db: {
+            url: process.env.DATABASE_URL
+        },
+    },
+});
 
 // Setup file uploads
 const upload = multer({ 

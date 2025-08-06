@@ -2,7 +2,7 @@
 # aws cloudformation deploy \
 #   --template-file dryseq-stack.yml \
 #   --stack-name dryseq-stack \
-#   --capabilities CAPABILITY_IAM \
+#   --capabilities CAPABILITY_NAMED_IAM \
 #   --parameter-overrides \
 #       KeyPairName=my-key \
 #       DBMasterUserPassword=supersecret \
@@ -21,6 +21,10 @@ Parameters:
     Type: String
     NoEcho: true
     MinLength: 8
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: User your default VPC or a specific one
 
 Resources:
 
@@ -55,7 +59,7 @@ Resources:
   UploadsBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: dryseq-uploads
+      BucketName: dryseq-userdata
 
   # === IAM Role for EC2 ===
 
@@ -79,12 +83,23 @@ Resources:
       Roles:
         - !Ref EC2InstanceRole
 
+  # === Parameter Groups ===
+
+  DrySeqDBParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: Parameter group for DrySeq Postgres17 DB
+      Family: postgres17
+      Parameters:
+        log_min_messages: error
+
   # === Security Groups ===
 
   EC2SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Allow HTTP + SSH
+      VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 22
@@ -99,6 +114,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Allow Postgres from EC2
+      VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 5432
@@ -112,6 +128,7 @@ Resources:
     Properties:
       DBName: dryseq
       Engine: postgres
+      EngineVersion: "17.5"
       MasterUsername: dryseqadmin
       MasterUserPassword: !Ref DBMasterUserPassword
       DBInstanceClass: db.t3.micro
@@ -119,6 +136,7 @@ Resources:
       PubliclyAccessible: true
       VPCSecurityGroups:
         - !GetAtt DBSecurityGroup.GroupId
+      DBParameterGroupName: !Ref DrySeqDBParameterGroup
 
   # === EC2 Instance ===
 
@@ -127,21 +145,41 @@ Resources:
     Properties:
       InstanceType: t3.micro
       KeyName: !Ref KeyPairName
-      SecurityGroups:
-        - !Ref EC2SecurityGroup
+      SecurityGroupIds:
+        - !GetAtt EC2SecurityGroup.GroupId
       IamInstanceProfile: !Ref EC2InstanceProfile
-      ImageId: ami-0c02fb55956c7d316 # Amazon Linux 2 AMI (us-east-1)
+      ImageId: ami-0263dd5562cf9d185 # Amazon Linux 2023 AMI (us-east-1)
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          yum update -y
-          yum install -y git nodejs python3
+          set -euxo pipefail
+
+          dnf update -y
+
+          # Install Git, Python 3, and PostgreSQL client
+          dnf install -y git nodejs python3 postgresql15
           npm install -g pm2
+
           cd /home/ec2-user
           git clone https://github.com/dgellerup/DrySeq.git
           cd DrySeq/backend
-          npm install
+
+          # Write .env file with DB connection info
+          echo "DATABASE_URL=postgresql://dryseqadmin:${DBMasterUserPassword}@${DrySeqDB.Endpoint.Address}:5432/dryseq" > .env
+
+          # Install backend dependencies
+          npm ci
+
+          # Push schema to RDS
+          npx prisma generate
+          npx prisma db push
+
+          # Start backend with PM2
           pm2 start server.js
+          pm2 save
+
+          # Set permissions
+          chown -R ec2-user:ec2-user /home/ec2-user
 
 Outputs:
 
