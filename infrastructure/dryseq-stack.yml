@@ -164,15 +164,11 @@ Resources:
           cd /home/ec2-user
 
           rm -rf DrySeq
-
           git clone --branch main https://github.com/dgellerup/DrySeq.git
-          cd DrySeq
-          git reset --hard origin/main
+          cd DrySeq/backend
 
           echo "Current git commit:"
-          git log -1 --online >> /var/log/user-data.log
-
-          cd backend
+          git log -1
 
           # Write .env file with DB connection info
           echo "DATABASE_URL=postgresql://dryseqadmin:${DBMasterUserPassword}@${DrySeqDB.Endpoint.Address}:5432/dryseq" > .env
@@ -183,6 +179,8 @@ Resources:
           # Push schema to RDS
           npx prisma generate
           npx prisma db push
+
+          echo "Prisma db push complete"
 
           # Start backend with PM2
           pm2 start server.js
