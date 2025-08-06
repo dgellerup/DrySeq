@@ -152,6 +152,7 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
+          # DrySeq deploy script
           set -euxo pipefail
 
           dnf update -y
@@ -162,6 +163,10 @@ Resources:
 
           cd /home/ec2-user
           git clone https://github.com/dgellerup/DrySeq.git
+          cd DrySeq
+          git checkout main
+          git pull origin main
+          
           cd DrySeq/backend
 
           # Write .env file with DB connection info
