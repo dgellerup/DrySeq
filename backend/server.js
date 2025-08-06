@@ -200,6 +200,19 @@ app.post("/upload", authenticateToken, upload.single("file"), async (req, res) =
         });
     }
 
+    const file_count = await prisma.file.count({
+        where: {
+            userId,
+            category: { in: [ fileCategory.PRIMER, fileCategory.GENOMIC] },
+        },
+    });
+
+    if ( file_count > 5 ) {
+        return res.status(400).json({
+            error: 'User already has maximum number of FASTA files (6).',
+        });
+    }
+
     // Rename and organize by category
     const targetDir = path.join(__dirname, "uploads", String(userId), category);
     const targetPath = path.join(targetDir, normalizedName);
