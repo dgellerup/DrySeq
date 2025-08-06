@@ -25,6 +25,8 @@ app.use(limiter);
 app.use(cors({}));
 app.use(express.json());
 
+const fsp = fs.promises;
+
 const { execFile } = require("child_process");
 const prisma = new PrismaClient({
     datasources: {
@@ -140,8 +142,6 @@ app.post("/login", async (req, res) => {
     }
 });
 
-const fsp = fs.promises;
-
 app.get("/files", authenticateToken, async (req, res) => {
     try {
         const userId = req.user.userId;
@@ -193,10 +193,23 @@ app.post("/upload", authenticateToken, upload.single("file"), async (req, res) =
 
     if (existing) {
         // Clean up orphaned file
-        await fs.promises.unlink(file.path).catch(console.error);
+        await fsp.unlink(file.path).catch(console.error);
 
         return res.status(400).json({
             error: `File ${normalizedName} already exists`,
+        });
+    }
+
+    const file_count = await prisma.file.count({
+        where: {
+            userId,
+            category: { in: [ FileCategory.PRIMER, FileCategory.GENOMIC] },
+        },
+    });
+
+    if ( file_count > 5 ) {
+        return res.status(400).json({
+            error: 'User already has maximum number of FASTA files (6).',
         });
     }
 
@@ -204,8 +217,8 @@ app.post("/upload", authenticateToken, upload.single("file"), async (req, res) =
     const targetDir = path.join(__dirname, "uploads", String(userId), category);
     const targetPath = path.join(targetDir, normalizedName);
 
-    await fs.promises.mkdir(targetDir, { recursive: true });
-    await fs.promises.rename(file.path, targetPath);
+    await fsp.mkdir(targetDir, { recursive: true });
+    await fsp.rename(file.path, targetPath);
 
     try {
         const categoryEnumMap = {
