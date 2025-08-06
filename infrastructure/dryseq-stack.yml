@@ -142,6 +142,8 @@ Resources:
 
   DrySeqBackend:
     Type: AWS::EC2::Instance
+    Metadata:
+      LastUpdated: "${LastUpdated}"
     Properties:
       InstanceType: t3.micro
       KeyName: !Ref KeyPairName
