@@ -143,7 +143,7 @@ Resources:
   DrySeqBackend:
     Type: AWS::EC2::Instance
     Metadata:
-      UpdateMessage: "DrySeqBackend v0.0.1"
+      UpdateMessage: "DrySeqBackend v0.0.2"
     Properties:
       InstanceType: t3.micro
       KeyName: !Ref KeyPairName
@@ -197,6 +197,18 @@ Resources:
           # Set permissions
           chown -R ec2-user:ec2-user /home/ec2-user
 
+  
+  DrySeqEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  DrySeqEIPAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      InstanceId: !Ref DrySeqBackend
+      EIP: !Ref DrySeqEIP
+
 Outputs:
 
   FrontendBucketURL:
@@ -210,3 +222,9 @@ Outputs:
   RDSHost:
     Description: RDS PostgreSQL host
     Value: !GetAtt DrySeqDB.Endpoint.Address
+
+  InstancePublicIP:
+    Description: "Public IP address of DrySeq EC2 instance"
+    Value: !Ref DrySeqEIP
+    Export:
+      Name: DrySeq-InstancePublicIP
