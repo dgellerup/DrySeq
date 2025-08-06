@@ -162,10 +162,15 @@ Resources:
           npm install -g pm2
 
           cd /home/ec2-user
-          git clone https://github.com/dgellerup/DrySeq.git
+
+          rm -rf DrySeq
+
+          git clone --branch main https://github.com/dgellerup/DrySeq.git
           cd DrySeq
-          git checkout main
-          git pull origin main
+          git reset --hard origin/main
+
+          echo "Current git commit:"
+          git log -1 --online >> /var/log/user-data.log
 
           cd backend
 
