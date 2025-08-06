@@ -20,6 +20,8 @@ model User {
   files         File[]
   fastaAnalyses FastaAnalysis[]
   fastqAnalyses FastqAnalysis[]
+
+  InviteCode InviteCode? @relation("InviteCodeToUser")
 }
 
 enum FileCategory {
@@ -30,7 +32,7 @@ enum FileCategory {
 
 model File {
   id         Int          @id @default(autoincrement())
-  filename   String       
+  filename   String
   path       String       @unique
   category   FileCategory
   uploadedAt DateTime     @default(now())
@@ -67,25 +69,35 @@ model FastqAnalysis {
   user   User @relation(fields: [userId], references: [id])
   userId Int
 
+  analysisName  String
   sampleName    String
   sequenceCount Int
 
-  fastqFileR1       File @relation("FastqFileR1", fields: [fastqFileR1Id], references: [id], onDelete: Cascade)
-  fastqFileR1Id     Int  @unique
+  fastqFileR1   File @relation("FastqFileR1", fields: [fastqFileR1Id], references: [id], onDelete: Cascade)
+  fastqFileR1Id Int  @unique
 
-  fastqFileR2       File @relation("FastqFileR2", fields: [fastqFileR2Id], references: [id], onDelete: Cascade)
-  fastqFileR2Id     Int  @unique
+  fastqFileR2   File @relation("FastqFileR2", fields: [fastqFileR2Id], references: [id], onDelete: Cascade)
+  fastqFileR2Id Int  @unique
 
-  primerFile        File? @relation("PrimerFile", fields: [primerFileId], references: [id], onDelete: Cascade)
-  primerFileId      Int?
-  primerFilename    String
+  primerFile     File?  @relation("PrimerFile", fields: [primerFileId], references: [id], onDelete: SetNull)
+  primerFileId   Int?
+  primerFilename String
 
-  referenceFile     File? @relation("ReferenceFile", fields: [referenceFileId], references: [id], onDelete: Cascade)
+  referenceFile     File?  @relation("ReferenceFile", fields: [referenceFileId], references: [id], onDelete: SetNull)
   referenceFileId   Int?
   referenceFilename String
 
   result    String
   createdAt DateTime @default(now())
 
-  @@unique([userId, sampleName, primerFileId, referenceFileId, sequenceCount])
+  @@unique([userId, sampleName, primerFileId, referenceFileId, sequenceCount, analysisName])
+}
+
+model InviteCode {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  usedBy    User?    @relation("InviteCodeToUser", fields: [usedById], references: [id])
+  usedById  Int?     @unique
 }

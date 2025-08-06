@@ -11,6 +11,8 @@
 # production
 /dist
 /build
+.cache/
+.next/
 
 # local environment
 .env

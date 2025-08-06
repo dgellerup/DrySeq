@@ -6,11 +6,14 @@ import { useAuth } from "../contexts/AuthContext";
 import "./AnalyzePage.css";
 
 export default function AnalyzePage() {
+    const [analysisName, setAnalysisName] = useState("");
+    const [sampleName, setSampleName] = useState("");
+    const [sequenceCount, setSequenceCount] = useState("");
+
     const [primerFiles, setPrimerFiles] = useState([]);
     const [referenceFiles, setReferenceFiles] = useState([]);
     const [primerFile, setPrimerFile] = useState("");
     const [referenceFile, setReferenceFile] = useState("");
-    const [result, setResult] = useState("");
     const [loading, setLoading] = useState("");
 
     const { token } = useAuth();
@@ -45,14 +48,15 @@ export default function AnalyzePage() {
         }
     }, [token]);
 
-    const handleAnalyze = async () => {
-        if (!primerFile || !referenceFile) {
-            alert("Please select both a primer file and a reference file.");
+    const handleAnalyze = async (event) => {
+        event.preventDefault();
+
+        if (!primerFile || !referenceFile || !analysisName || !sampleName || !sequenceCount) {
+            alert("Please fill in all fields.");
             return;
         }
 
         setLoading(true);
-        setResult("");
 
         try {
             const res = await fetch("http://localhost:5000/create-fastq", {
@@ -64,8 +68,9 @@ export default function AnalyzePage() {
                 body: JSON.stringify({
                     primerFileId: primerFile,
                     referenceFileId: referenceFile,
-                    sampleName: "test-123",
-                    sequenceCount: 200,
+                    analysisName: analysisName,
+                    sampleName: sampleName,
+                    sequenceCount: sequenceCount,
                 }),
             });
 
@@ -82,9 +87,7 @@ export default function AnalyzePage() {
                 </div>
                 )
 
-            setResult(data.result);
         } catch (err) {
-            setResult(`Error: ${err.message}`);
             const errorMsg = `FASTQ Files Creation Failed - ${err.message}`;
             toast.info(errorMsg);
         } finally {
@@ -99,46 +102,80 @@ return (
             <p>Please log in</p>
         ) : (
             <>
-                <div>
-                    <label className="analyze-label">Primer File:</label>
-                    <select
-                        value={primerFile}
-                        onChange={(e) => setPrimerFile(parseInt(e.target.value))}
-                        className="analyze-select"
+                <form onSubmit={handleAnalyze}>
+                    <div>
+                        <label>Analysis Name:</label>
+                        <input
+                            type="text"
+                            value={analysisName}
+                            onChange={(e) => setAnalysisName(e.target.value)}
+                            required
+                        />
+                    </div>
+
+                    <div>
+                        <label>Sample Name:</label>
+                        <input
+                            type="text"
+                            value={sampleName}
+                            onChange={(e) => setSampleName(e.target.value)}
+                            required
+                        />
+                    </div>
+
+                    <div>
+                        <label>Number of Sequences (max 50,000):</label>
+                        <input
+                            type="number"
+                            min="1"
+                            max="50000"
+                            value={sequenceCount}
+                            onChange={(e) => setSequenceCount(parseInt(e.target.value))}
+                            required
+                        />
+                    </div>
+
+                    <div>
+                        <label>Primer File:</label>
+                        <select
+                            value={primerFile}
+                            onChange={(e) => setPrimerFile(parseInt(e.target.value))}
+                            className="analyze-select"
+                        >
+                            <option value="" disabled hidden>Select Primer File</option>
+                            {primerFiles.map((file) => (
+                                <option key={file.id} value={file.id}>
+                                    {file.filename}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label>Reference File:</label>
+                        <select
+                            value={referenceFile}
+                            onChange={(e) => setReferenceFile(parseInt(e.target.value))}
+                            className="analyze-select"
+                        >
+                            <option value="" disabled hidden>Select Reference File</option>
+                            {referenceFiles.map((file) => (
+                                <option key={file.id} value={file.id}>
+                                    {file.filename}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        style={{ marginTop: "15px" }}
                     >
-                        <option value="" disabled hidden>Select Primer File</option>
-                        {primerFiles.map((file) => (
-                            <option key={file.id} value={file.id}>
-                                {file.filename}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-
-                <div>
-                    <label className="analyze-label">Reference File:</label>
-                    <select
-                        value={referenceFile}
-                        onChange={(e) => setReferenceFile(parseInt(e.target.value))}
-                        className="analyze-select"
-                    >
-                        <option value="" disabled hidden>Select Reference File</option>
-                        {referenceFiles.map((file) => (
-                            <option key={file.id} value={file.id}>
-                                {file.filename}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-
-                <button
-                    onClick={handleAnalyze}
-                    disabled={loading}
-                    style={{ marginTop: "20px" }}
-                >
-                    {loading ? "Creating..." : "Create FASTQs"}
-                </button>
-
+                        {loading ? "Creating..." : "Create FASTQs"}
+                    </button>
+                </form>
+                
             </>
         )}
     </div>

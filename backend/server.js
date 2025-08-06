@@ -26,7 +26,13 @@ app.use(cors({}));
 app.use(express.json());
 
 const { execFile } = require("child_process");
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+    datasources: {
+        db: {
+            url: process.env.DATABASE_URL
+        },
+    },
+});
 
 // Setup file uploads
 const upload = multer({ 
@@ -56,7 +62,16 @@ function authenticateToken(req, res, next) {
 
 // Routes
 app.post("/register", async (req, res) => {
-    const { username, password } = req.body;
+    const { username, password, inviteCode } = req.body;
+
+    if (!inviteCode) {
+        return res.status(400).json({ error: "Invite code is required." });
+    }
+
+    const invite = await prisma.inviteCode.findUnique({ where: { code: inviteCode } });
+    if (!invite || invite.used) {
+        return res.status(403).json({ error: "Invalid or already-used invite code." });
+    }
 
     if (!username || !password){
         return res.status(400).json({ error: "Username and password required" });
@@ -70,12 +85,20 @@ app.post("/register", async (req, res) => {
             return res.status(400).json({ error: "User already exists" });
         }
 
-        const hashed = bcrypt.hashSync(password, 10);
+        const hashed = await bcrypt.hash(password, 10);
         const user = await prisma.user.create({
             data: {
                 username: normalizedUsername,
                 password: hashed,
             }
+        });
+
+        await prisma.inviteCode.update({
+            where: { code: inviteCode },
+            data: {
+                used: true,
+                usedById: user.id,
+            },
         });
 
         return res.status(201).json({ success: true, userId: user.id});
@@ -358,7 +381,18 @@ app.get("/fastq-files", authenticateToken, async (req, res) => {
         },
     });
 
-    res.json(analyses);
+    const hydrated = analyses.map((analysis) => ({
+        ...analysis,
+        primerFilename: analysis.primerFile
+            ? analysis.primerFile.filename
+            : `${analysis.primerFilename} (Deleted)`,
+        
+        referenceFilename: analysis.referenceFile
+            ? analysis.referenceFile.filename
+            : `${analysis.referenceFilename} (Deleted)`
+    }));
+
+    res.json(hydrated);
 })
 
 app.post("/analyze-fasta", authenticateToken, async (req, res) => {
@@ -424,17 +458,18 @@ app.post("/analyze-fasta", authenticateToken, async (req, res) => {
 });
 
 app.post("/create-fastq", authenticateToken, async (req, res) => {
-    const { primerFileId, referenceFileId, sampleName, sequenceCount } = req.body;
+    const { primerFileId, referenceFileId, sampleName, sequenceCount, analysisName } = req.body;
     const userId = req.user?.userId;
 
     const existing = await prisma.fastqAnalysis.findUnique({
         where: {
-            userId_sampleName_primerFileId_referenceFileId_sequenceCount: {
+            userId_sampleName_primerFileId_referenceFileId_sequenceCount_analysisName: {
                 userId,
                 sampleName,
                 primerFileId,
                 referenceFileId,
                 sequenceCount,
+                analysisName
             },
         },
         include: {
@@ -546,6 +581,7 @@ app.post("/create-fastq", authenticateToken, async (req, res) => {
                             primerFileId,
                             referenceFileId,
                             result: JSON.stringify(result),
+                            analysisName,
                             sampleName,
                             sequenceCount,
                             fastqFileR1Id: fileR1.id,

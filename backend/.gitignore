@@ -10,8 +10,7 @@ __pycache__/
 *.pyc
 *.pyo 
 *.pyd 
-.Python 
-*.env 
+.Python
 
 # Logs
 logs/
@@ -31,6 +30,4 @@ tmp/
 # VS Code or IDE-specific
 .vscode/
 .idea/
-
-# SQL
-db.sqlite
+backend/prismaClient.js

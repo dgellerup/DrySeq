@@ -15,13 +15,7 @@
     margin-bottom: 24px;
 }
 
-.analyze-label {
-    display: block;
-    font-weight: 500;
-    margin-bottom: 6px;
-}
-
-.analyze-select {
+.analyze-container select {
     width: 100%;
     padding: 8px 12px;
     border: 1px solid #ccc;
@@ -66,4 +60,26 @@
     text-align: center;
     color: #777;
     font-style: italic;
+}
+
+.analyze-container div {
+    margin-bottom: 15px;
+}
+
+.analyze-container label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.analyze-container input,
+.analyze-container select {
+    width: 100%;
+    max-width: 400px;
+    padding: 8px 10px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 1rem;
+    display: block;
+    box-sizing: border-box;
 }
