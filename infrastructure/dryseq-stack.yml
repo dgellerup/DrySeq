@@ -184,6 +184,12 @@ Resources:
 
           echo "Prisma db push complete"
 
+          cd /home/ec2-user/DrySeq/frontend
+          npm ci
+          npm run build
+
+          cd /home/ec2-user/DrySeq/backend
+
           # Start backend with PM2
           pm2 start server.js
           pm2 save
