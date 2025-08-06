@@ -166,8 +166,8 @@ Resources:
           cd DrySeq
           git checkout main
           git pull origin main
-          
-          cd DrySeq/backend
+
+          cd backend
 
           # Write .env file with DB connection info
           echo "DATABASE_URL=postgresql://dryseqadmin:${DBMasterUserPassword}@${DrySeqDB.Endpoint.Address}:5432/dryseq" > .env
