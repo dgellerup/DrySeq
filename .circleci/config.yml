@@ -1,0 +1,56 @@
+version: 2.1
+
+executors:
+  node_executor:
+    docker:
+      - image: cimg/node:20.11
+    working_directory: ~/project
+
+jobs:
+  build-frontend:
+    executor: node_executor
+    steps:
+      - checkout
+
+      - restore_cache:
+        name: Restore npm cache
+        keys:
+          - v1-npm-deps-{{ checksum "frontend/package-lock.json" }}
+          - v1-npm-deps-
+          
+      - run:
+        name: Install frontend dependencies
+        working_directory: frontend
+        command: npm ci
+
+      - run:
+        name: Save npm cache
+        key: v1-npm-deps-{{ checksum "frontend/package-lock.json" }}
+        paths:
+          - frontend/node_modules
+          - frontend/.npm
+
+      - run:
+        name: Build frontend
+        working_directory: frontend
+        command: npm run build
+
+      - run:
+        name: Install AWS CLI
+        command: |
+          sudo apt-get update && sudo apt-get install -y awscli
+
+      - run:
+        name: Upload build to S3
+        working_directory: frontend
+        command: |
+          aws s3 sync build/ s3://dryseq-frontend/ --acl public-read --delete
+
+workflows:
+  deploy-frontend:
+    jobs:
+      - build-frontend:
+          filters:
+            branches:
+              only:
+                - main
