@@ -167,6 +167,7 @@ Resources:
 
           rm -rf DrySeq
           git clone --branch main https://github.com/dgellerup/DrySeq.git
+          git pull
           cd DrySeq/backend
 
           echo "Current git commit:"
