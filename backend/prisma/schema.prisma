@@ -64,6 +64,28 @@ model FastaAnalysis {
   @@unique([userId, fastaFileId])
 }
 
+model PcrAnalysis {
+  id                Int   @id @default(autoincrement())
+  user              User  @relation(fields: [userId], references: [id])
+  userId            Int
+
+  pcrAnalysisName   String
+  cyclesCount       Int
+
+  primerFile        File?  @relation("PrimerFile", fields: [primerFileId], reference: [id], onDelete: SetNull)
+  primerFileId      Int?
+  primerFilename    String
+
+  referenceFile     File?  @relation("ReferenceFile", fields: [referenceFileId], references: [id], onDelete: SetNull)
+  referenceFileId   Int?
+  referenceFilename String
+
+  result    String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, primerFileId, referenceFileId, cyclesCount, pcrAnalysisName])
+}
+
 model FastqAnalysis {
   id     Int  @id @default(autoincrement())
   user   User @relation(fields: [userId], references: [id])
