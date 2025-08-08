@@ -117,15 +117,15 @@ def generate_read_name_generator(instrument="M00000", run_id="00001", flowcell="
     
     return generate_read_names
 
-def generate_fastq_filename(sample_name: str, read: str):
-    sample_num = random.randint(1, 100)
+def generate_fastq_filename(sample_name: str, sample_num: int, read: str):
     lane = "L001"
     index = "001"
     return f"{sample_name}_S{sample_num}_{lane}_{read}_{index}.fastq.gz"
 
 def write_fastq_files(amplicons_dict: dict, sequence_count: int, output_dir: Path, sample_name: str) -> tuple[Path, Path]:
-    r1_path = output_dir / generate_fastq_filename(sample_name, "R1")
-    r2_path = output_dir / generate_fastq_filename(sample_name, "R2")
+    sample_num = random.randint(1, 100)
+    r1_path = output_dir / generate_fastq_filename(sample_name, sample_num, "R1")
+    r2_path = output_dir / generate_fastq_filename(sample_name, sample_num, "R2")
     cycle_quality_stats = load_cycle_stats()
     overrun_base_probabilities = load_overrun_base_probabilities()
     gen_read_names = generate_read_name_generator()
