@@ -8,6 +8,7 @@ import AnalyzePage from "./pages/AnalyzePage";
 import HomePage from "./pages/HomePage";
 import UploadPage from "./pages/UploadPage";
 import FileManagementPage from "./pages/FileManagementPage";
+import PCRPage from "./pages/PCRPage";
 
 import "react-toastify/dist/ReactToastify.css";
 
@@ -37,6 +38,14 @@ function App() {
             element={
               <Layout>
                 <UploadPage />
+              </Layout>
+            }
+          />
+          <Route
+            path = "/pcr"
+            element={
+              <Layout>
+                <PCRPage />
               </Layout>
             }
           />
