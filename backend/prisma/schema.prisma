@@ -83,7 +83,7 @@ model PcrAnalysis {
   result    String
   createdAt DateTime @default(now())
 
-  @@unique([userId, primerFileId, referenceFileId, cyclesCount, pcrAnalysisName])
+  @@unique([userId, primerFileId, referenceFileId, pcrAnalysisName, cyclesCount])
 }
 
 model FastqAnalysis {

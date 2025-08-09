@@ -470,6 +470,129 @@ app.post("/analyze-fasta", authenticateToken, async (req, res) => {
     }
 });
 
+app.get("/run-pcr", authenticateToken, async (req, rew) => {
+    const { primerFileId, referenceFileId, pcrAnalysisName, cycleCount } = req.body;
+    const userId = req.user?.userId;
+
+    const existing = await prisma.pcrAnalysis.findUnique({
+        where: {
+            userId_primerFileId_referenceFileId_pcrAnalysisName_cycleCount: {
+                userId,
+                primerFileId,
+                referenceFileId,
+                pcrAnalysisName,
+                cycleCount,
+            },
+        },
+        include: {
+            primerFile: true,
+            referenceFile: true,
+            cyclesCount: true,
+        },
+    });
+
+    if (existing) {
+        console.log("Existing PCR found:", existing);
+        return res.json({
+            message: "PCR already exists",
+            result: existing.result,
+            files: [
+                { id: existing.primerFile?.id, filename: exitsing.primerFile?.filename },
+                { id: existing.referenceFile?.id, filename: existing.referenceFile?.filename },
+            ],
+        });
+    }
+
+    try {
+        const [primerFile, referenceFile] = await Promise.all([
+            prisma.file.findFirst({
+                where: { id: primerFileId, userId },
+            }),
+            prisma.file.findFirst({
+                where: { id: referenceFileId, userId },
+            }),
+        ]);
+
+        if (!primerFile || !referenceFile) {
+            return res.status(404).json({ error: "Primer or reference file not found or not owned by user" });
+        }
+
+        const safeName = sampleName?.replace(/[^a-zA-Z0-9_\-]/g, "").replace(/\.(fastq|fq)(\.gz)?$/i, "");
+        
+        const primerPath = path.join(__dirname, "uploads", String(userId), primerFile.category, primerFile.filename);
+        const referencePath = path.join(__dirname, "uploads", String(userId), referenceFile.category, referenceFile.filename);
+        const outputDir = path.join(__dirname, "uploads", String(userId), "pcr");
+        const scriptPath = path.join(__dirname, "scripts", "pcr.py");
+        const venvPython = path.join(__dirname, "venv", "Scripts", "python.exe");
+
+        fs.mkdirSync(outputDir, { recursive: true });
+
+        const args = [
+            scriptPath,
+            "--primer_path", primerPath,
+            "--reference_path", referencePath,
+            "--output_dir", outputDir,
+            "--pcr_analysis_name", safeName,
+            "--cycle_count", sequenceCount,
+        ];
+
+        try {    
+            execFile(venvPython, args, async (err, stdout, stderr) => {
+                console.log("execFile finished running");
+                console.log("STDOUT:", stdout);
+                console.error("STDERR:", stderr);
+                if (err) {
+                    console.error("Python error:", stderr);
+                    return res.status(500).json({ error: "Processing failed" });
+                }
+
+                let result;
+                try {
+                    result = JSON.parse(stdout.trim());
+                } catch (e) {
+                    console.error("Failed to parse JSON from Python script:", stdout);
+                    return res.status(500).json({ error: "Invalid analysis result format "});
+                }
+
+                console.log("Parsed result:", result);
+
+                if (result.status !== "success") {
+                    console.error("Analysis failed:", result.error);
+                    return res.status(500).json({ error: result.error || "Unknown failure" });
+                }
+
+                const pcrFilename = path.basename(result.pcr_path);
+
+                try {
+                    const pcrCreate = prisma.file.create({
+                            data: {
+                                filename: pcrFilename,
+                                path: result.pcr_path,
+                                category: FileCategory.FASTA,
+                                userId,
+                            },
+                        });
+
+                    res.json({
+                        message: "PCR files created successfully",
+                        pcrAnalysisName: safeName,
+                        file: pcrCreate,
+                        path: result.pcr_path,
+                    });
+                } catch (err) {
+                    console.error("Database error:", err);
+                    res.status(500).json({ error: "Failed to save PCR file", details: err.message || err});
+                }            
+            });
+        } catch (e) {
+            console.error("Unhandled error in execFile callback:", e);
+        }
+    } catch (err) {
+        console.error("Server error:", err);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
 app.post("/create-fastq", authenticateToken, async (req, res) => {
     const { primerFileId, referenceFileId, sampleName, sequenceCount, analysisName } = req.body;
     const userId = req.user?.userId;
