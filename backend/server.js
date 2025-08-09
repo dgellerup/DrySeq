@@ -424,7 +424,7 @@ app.post("/analyze-fasta", authenticateToken, async (req, res) => {
             return res.status(404).json({ error: "FASTA file not found."});
         }
 
-        const fastaPath = path.join(__dirname, "uploads", String(userId), fastaFile.category, fastaFile.filename);
+        const fastaPath = fastaFile.path;
         const scriptPath = path.join(__dirname, "scripts", "process_fasta.py");
         const venvPython = path.join(__dirname, "venv", "Scripts", "python.exe");
 
@@ -646,19 +646,17 @@ app.post("/create-fastq", authenticateToken, async (req, res) => {
 
         const safeName = sampleName?.replace(/[^a-zA-Z0-9_\-]/g, "").replace(/\.(fastq|fq)(\.gz)?$/i, "");
         
-        const primerPath = path.join(__dirname, "uploads", String(userId), primerFile.category, primerFile.filename);
-        const referencePath = path.join(__dirname, "uploads", String(userId), referenceFile.category, referenceFile.filename);
-        const outputDir = path.join(__dirname, "uploads", String(userId), "fastq");
+        const primerPath = primerFile.path;
+        const referencePath = referenceFile.path;
+        const outputS3Prefix = `${userId}/fastq/`
         const scriptPath = path.join(__dirname, "scripts", "create_fastq.py");
         const venvPython = path.join(__dirname, "venv", "Scripts", "python.exe");
-
-        fs.mkdirSync(outputDir, { recursive: true });
 
         const args = [
             scriptPath,
             "--primer_path", primerPath,
             "--reference_path", referencePath,
-            "--output_dir", outputDir,
+            "--output_s3_path", outputS3Prefix,
             "--sample_name", safeName,
             "--sequence_count", sequenceCount,
         ];
