@@ -5,11 +5,17 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const path = require("path");
 const fs = require("fs");
+
 const { PrismaClient, FileCategory } = require("@prisma/client");
+
+const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } = require("@aws-sdk/client-s3");
+
+const s3 = new S3Client({ region: process.env.AWS_REGION });
 
 const app = express();
 const PORT = 5000;
 const SECRET = "queen-dinah-rules-seattle";
+const USERDATA_BUCKET = process.env.USERDATA_BUCKET;
 
 const rateLimit = require("express-rate-limit");
 
@@ -25,8 +31,6 @@ app.use(limiter);
 app.use(cors({}));
 app.use(express.json());
 
-const fsp = fs.promises;
-
 const { execFile } = require("child_process");
 const prisma = new PrismaClient({
     datasources: {
@@ -36,17 +40,22 @@ const prisma = new PrismaClient({
     },
 });
 
-// Setup file uploads
-const upload = multer({ 
-    dest: "uploads/",
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB limit
-    fileFilter: (req, file, cb) => {
-        if (!file.originalname.match(/\.(fa|fasta)$/i)) {
-            return cb(new Error("Only FASTA files (.fa, .fasta) are allowed"));
-        }
-        cb(null, true);
+function validateCategory(req, res, next) {
+    const { category } = req.body;
+    if (!["genomic", "primer"].includes(category)) {
+        return res.status(400).json({ error: "Invalid category. Use 'genomic' or 'primer'"});
     }
-});
+    next();
+}
+
+function normalizeFilename(name) {
+  const base = path.posix.basename(name || "");
+  const lower = base.toLowerCase();
+  const spaced = lower.replace(/\s+/g, "_");
+  return spaced.replace(/[^a-z0-9._-]/g, "_");
+}
+// Setup file uploads
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Auth middleware
 function authenticateToken(req, res, next) {
@@ -163,64 +172,51 @@ app.get("/files", authenticateToken, async (req, res) => {
     }
 });
 
-app.post("/upload", authenticateToken, upload.single("file"), async (req, res) => {
+app.post("/upload", authenticateToken, upload.single("file"), validateCategory, async (req, res) => {
+    console.log(req.body);
     const { category } = req.body;
-    const file = req.file;
     const userId = req.user?.userId;
     
-    if (!file) {
+    if (!req.file) {
         return res.status(400).json({ error: "No file uploaded" });
     }
 
-    const normalizedName = file.originalname.trim().toLowerCase();
+    const normalizedName = normalizeFilename(req.file.originalname);
 
-    const disallowed = /\.(exe|sh|js|bat)$/i;
-    if(disallowed.test(normalizedName)) {
-        return res.status(400).json({ error: "Disallowed file type" });
-    }
+    if (!["genomic", "primer"].includes(category)) return res.status(400).json({ error: "Invalid category." });
+    if (/\.(exe|sh|js|bat)$/i.test(normalizedName)) return res.status(400).json({ error: "Disallowed file type" });
 
-    if (!["genomic", "primer"].includes(category)) {
-        return res.status(400).json({ error: "Invalid category. Use 'genomic' or 'primer'" });
-    }
-
-
-    const existing = await prisma.file.findFirst({
-        where: {
-            filename: normalizedName,
-            userId,
-        },
-    });
+    const existing = await prisma.file.findFirst({ where: { filename: normalizedName, userId } });
 
     if (existing) {
-        // Clean up orphaned file
-        await fsp.unlink(file.path).catch(console.error);
-
+        // Upload should have been blocked but if racing clean up just-uploaded key
         return res.status(400).json({
             error: `File ${normalizedName} already exists`,
         });
     }
 
     const file_count = await prisma.file.count({
-        where: {
-            userId,
-            category: { in: [ FileCategory.PRIMER, FileCategory.GENOMIC] },
-        },
+        where: { userId, category: { in: [ FileCategory.PRIMER, FileCategory.GENOMIC] }, },
     });
 
     if ( file_count > 5 ) {
-        return res.status(400).json({
-            error: 'User already has maximum number of FASTA files (6).',
-        });
+        return res.status(400).json({ error: 'User already has maximum number of FASTA files (6).', });
     }
 
-    // Rename and organize by category
-    const targetDir = path.join(__dirname, "uploads", String(userId), category);
-    const targetPath = path.join(targetDir, normalizedName);
-
-    await fsp.mkdir(targetDir, { recursive: true });
-    await fsp.rename(file.path, targetPath);
-
     try {
+
+        const s3Key = `${userId}/${category}/${normalizedName}`;
+
+        // ATOMIC put
+        await s3.send(new PutObjectCommand({
+            Bucket: USERDATA_BUCKET,
+            Key: s3Key,
+            Body: req.file.buffer,
+            ContentType: req.file.mimetype || "application/octet-stream",
+            ServerSideEncryption: "AES256",
+            IfNoneMatch: "*", // <-- the magic: fail with 412 if object exists
+        }));
+
         const categoryEnumMap = {
             genomic: FileCategory.GENOMIC,
             primer: FileCategory.PRIMER,
@@ -232,10 +228,13 @@ app.post("/upload", authenticateToken, upload.single("file"), async (req, res) =
         if (!fileCategory) {
             return res.status(400).json({ error: "Invalid category." });
         }
+
+        const s3Uri = `s3://${USERDATA_BUCKET}/${s3Key}`;
+
         const newFile = await prisma.file.create({
             data: {
                 filename: normalizedName,
-                path: targetPath,
+                path: s3Uri,
                 category: fileCategory,
                 userId,
             },
@@ -243,10 +242,13 @@ app.post("/upload", authenticateToken, upload.single("file"), async (req, res) =
 
         res.json({ message: "Upload saved", fileId: newFile.id, filename: newFile.filename, category: newFile.category });
     } catch (err) {
+        // If the object already exists, S3 returns 412
+        if (err?.$metadata?.httpStatusCode === 412) {
+        return res.status(409).json({ error: "File already exists (not overwritten)" });
+        }
         console.error("Upload error:", err);
-        res.status(500).json({ error: "Failed to save file" });
+        return res.status(500).json({ error: "Failed to save file" });
     }
-
 });
 
 app.get("/download/:fileId", authenticateToken, async (req, res) => {
