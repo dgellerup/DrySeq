@@ -317,24 +317,29 @@ async function deleteManyFromS3(s3Uris = []) {
   }
 }
 
-app.delete("/delete/:fileId", async (req, res) => {
-    const { fileId } = req.params;
+app.delete("/delete/:fileId", authenticateToken, async (req, res) => {
+  const { fileId } = req.params;
 
-    try {
-        const file = await prisma.file.findUnique({ where: { id: parseInt(fileId) } });
-        if (!file) return res.status(404).json({ error: "File not found" });
+  try {
+    const file = await prisma.file.findUnique({ where: { id: Number(fileId) } });
+    if (!file) return res.status(404).json({ error: "File not found" });
 
-        const filePath = file.path;
+    const filePath = file.path;
 
-        await deleteFromS3(filePath);
-
-        await prisma.file.delete({ where: {id: parseInt(fileId) } }); // Remove from DB
-
-        res.json({ message: "file deleted successfully" });
-    } catch (err) {
-        console.error("Delete error:", err);
-        res.status(500).json({ error: "Internal server error" });
+    if (isS3Uri(filePath)) {
+      await deleteFromS3(filePath);
+    } else {
+      // local fallback
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
+
+    await prisma.file.delete({ where: { id: Number(fileId) } });
+
+    res.json({ message: "File deleted successfully" });
+  } catch (err) {
+    console.error("Delete error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 app.delete("/delete-fastq-analysis/:id", authenticateToken, async (req, res) => {
@@ -516,7 +521,7 @@ app.post("/analyze-fasta", authenticateToken, async (req, res) => {
     }
 });
 
-app.get("/run-pcr", authenticateToken, async (req, rew) => {
+app.post("/run-pcr", authenticateToken, async (req, rew) => {
     const { primerFileId, referenceFileId, pcrAnalysisName, cycleCount } = req.body;
     const userId = req.user?.userId;
 

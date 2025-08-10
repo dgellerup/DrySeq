@@ -19,6 +19,7 @@ model User {
   password      String
   files         File[]
   fastaAnalyses FastaAnalysis[]
+  pcrAnalyses   PcrAnalysis[]
   fastqAnalyses FastqAnalysis[]
 
   InviteCode InviteCode? @relation("InviteCodeToUser")
@@ -39,13 +40,19 @@ model File {
   userId     Int
   user       User         @relation(fields: [userId], references: [id])
 
-  // Relations for different analysis types
+  // Existing (non-PCR)
   fastaAnalysis   FastaAnalysis? @relation("FastaFile")
   fastqAnalysisR1 FastqAnalysis? @relation("FastqFileR1")
   fastqAnalysisR2 FastqAnalysis? @relation("FastqFileR2")
 
+  // Existing Fastq back-relations (keep these names if your FastqAnalysis uses them)
   primerAnalyses    FastqAnalysis[] @relation("PrimerFile")
   referenceAnalyses FastqAnalysis[] @relation("ReferenceFile")
+
+  // PCR back-relations — NEW (names must match below)
+  pcrAnalysis          PcrAnalysis?  @relation("PcrFile") // 1:1 backref for output
+  usedAsPrimerInPcr    PcrAnalysis[] @relation("PcrPrimerFile") // many PCR analyses can share a primer file
+  usedAsReferenceInPcr PcrAnalysis[] @relation("PcrReferenceFile") // many PCR analyses can share a reference file
 
   @@unique([filename, userId])
 }
@@ -65,18 +72,24 @@ model FastaAnalysis {
 }
 
 model PcrAnalysis {
-  id                Int   @id @default(autoincrement())
-  user              User  @relation(fields: [userId], references: [id])
-  userId            Int
+  id     Int  @id @default(autoincrement())
+  user   User @relation(fields: [userId], references: [id])
+  userId Int
 
-  pcrAnalysisName   String
-  cyclesCount       Int
+  pcrAnalysisName String
+  cyclesCount     Int
 
-  primerFile        File?  @relation("PrimerFile", fields: [primerFileId], reference: [id], onDelete: SetNull)
-  primerFileId      Int?
-  primerFilename    String
+  // One analysis -> one output file
+  pcrFile     File?  @relation("PcrFile", fields: [pcrFileId], references: [id], onDelete: Cascade)
+  pcrFileId   Int?   @unique
+  pcrFilename String
 
-  referenceFile     File?  @relation("ReferenceFile", fields: [referenceFileId], references: [id], onDelete: SetNull)
+  // Distinct relation names for PCR to avoid clashing with FastqAnalysis
+  primerFile     File?  @relation("PcrPrimerFile", fields: [primerFileId], references: [id], onDelete: SetNull)
+  primerFileId   Int?
+  primerFilename String
+
+  referenceFile     File?  @relation("PcrReferenceFile", fields: [referenceFileId], references: [id], onDelete: SetNull)
   referenceFileId   Int?
   referenceFilename String
 
