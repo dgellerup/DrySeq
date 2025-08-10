@@ -5,11 +5,18 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const path = require("path");
 const fs = require("fs");
+
 const { PrismaClient, FileCategory } = require("@prisma/client");
+
+const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, DeleteObjectsCommand } = require("@aws-sdk/client-s3");
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
+
+const s3 = new S3Client({ region: process.env.AWS_REGION });
 
 const app = express();
 const PORT = 5000;
 const SECRET = "queen-dinah-rules-seattle";
+const USERDATA_BUCKET = process.env.USERDATA_BUCKET;
 
 const rateLimit = require("express-rate-limit");
 
@@ -25,8 +32,6 @@ app.use(limiter);
 app.use(cors({}));
 app.use(express.json());
 
-const fsp = fs.promises;
-
 const { execFile } = require("child_process");
 const prisma = new PrismaClient({
     datasources: {
@@ -36,17 +41,22 @@ const prisma = new PrismaClient({
     },
 });
 
-// Setup file uploads
-const upload = multer({ 
-    dest: "uploads/",
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB limit
-    fileFilter: (req, file, cb) => {
-        if (!file.originalname.match(/\.(fa|fasta)$/i)) {
-            return cb(new Error("Only FASTA files (.fa, .fasta) are allowed"));
-        }
-        cb(null, true);
+function validateCategory(req, res, next) {
+    const { category } = req.body;
+    if (!["genomic", "primer"].includes(category)) {
+        return res.status(400).json({ error: "Invalid category. Use 'genomic' or 'primer'"});
     }
-});
+    next();
+}
+
+function normalizeFilename(name) {
+  const base = path.posix.basename(name || "");
+  const lower = base.toLowerCase();
+  const spaced = lower.replace(/\s+/g, "_");
+  return spaced.replace(/[^a-z0-9._-]/g, "_");
+}
+// Setup file uploads
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Auth middleware
 function authenticateToken(req, res, next) {
@@ -156,74 +166,67 @@ app.get("/files", authenticateToken, async (req, res) => {
             select: { id: true, filename: true }
         });
 
-        res.json({ primer, genomic });
+        const pcr = await prisma.file.findMany({
+            where: { category: FileCategory.PCR, userId },
+            select: { id: true, filename: true}
+        })
+
+        res.json({ primer, genomic, pcr });
     } catch (err) {
         console.error("Error fetching files:", err);
         res.status(500).json({ error: "Failed to fetch files" });
     }
 });
 
-app.post("/upload", authenticateToken, upload.single("file"), async (req, res) => {
+app.post("/upload", authenticateToken, upload.single("file"), validateCategory, async (req, res) => {
+    console.log(req.body);
     const { category } = req.body;
-    const file = req.file;
     const userId = req.user?.userId;
     
-    if (!file) {
+    if (!req.file) {
         return res.status(400).json({ error: "No file uploaded" });
     }
 
-    const normalizedName = file.originalname.trim().toLowerCase();
+    const normalizedName = normalizeFilename(req.file.originalname);
 
-    const disallowed = /\.(exe|sh|js|bat)$/i;
-    if(disallowed.test(normalizedName)) {
-        return res.status(400).json({ error: "Disallowed file type" });
-    }
+    if (!["genomic", "primer"].includes(category)) return res.status(400).json({ error: "Invalid category." });
+    if (/\.(exe|sh|js|bat)$/i.test(normalizedName)) return res.status(400).json({ error: "Disallowed file type" });
 
-    if (!["genomic", "primer"].includes(category)) {
-        return res.status(400).json({ error: "Invalid category. Use 'genomic' or 'primer'" });
-    }
-
-
-    const existing = await prisma.file.findFirst({
-        where: {
-            filename: normalizedName,
-            userId,
-        },
-    });
+    const existing = await prisma.file.findFirst({ where: { filename: normalizedName, userId } });
 
     if (existing) {
-        // Clean up orphaned file
-        await fsp.unlink(file.path).catch(console.error);
-
+        // Upload should have been blocked but if racing clean up just-uploaded key
         return res.status(400).json({
             error: `File ${normalizedName} already exists`,
         });
     }
 
     const file_count = await prisma.file.count({
-        where: {
-            userId,
-            category: { in: [ FileCategory.PRIMER, FileCategory.GENOMIC] },
-        },
+        where: { userId, category: { in: [ FileCategory.PRIMER, FileCategory.GENOMIC] }, },
     });
 
     if ( file_count > 5 ) {
-        return res.status(400).json({
-            error: 'User already has maximum number of FASTA files (6).',
-        });
+        return res.status(400).json({ error: 'User already has maximum number of FASTA files (6).', });
     }
 
-    // Rename and organize by category
-    const targetDir = path.join(__dirname, "uploads", String(userId), category);
-    const targetPath = path.join(targetDir, normalizedName);
-
-    await fsp.mkdir(targetDir, { recursive: true });
-    await fsp.rename(file.path, targetPath);
-
     try {
+
+        const s3Key = `${userId}/${category}/${normalizedName}`;
+
+        // ATOMIC put
+        await s3.send(new PutObjectCommand({
+            Bucket: USERDATA_BUCKET,
+            Key: s3Key,
+            Body: req.file.buffer,
+            ContentType: req.file.mimetype || "application/octet-stream",
+            ServerSideEncryption: "AES256",
+            IfNoneMatch: "*", // <-- the magic: fail with 412 if object exists
+        }));
+
         const categoryEnumMap = {
             genomic: FileCategory.GENOMIC,
             primer: FileCategory.PRIMER,
+            pcr: FileCategory.PCR,
             fastq: FileCategory.FASTQ,
         };
 
@@ -232,10 +235,13 @@ app.post("/upload", authenticateToken, upload.single("file"), async (req, res) =
         if (!fileCategory) {
             return res.status(400).json({ error: "Invalid category." });
         }
+
+        const s3Uri = `s3://${USERDATA_BUCKET}/${s3Key}`;
+
         const newFile = await prisma.file.create({
             data: {
                 filename: normalizedName,
-                path: targetPath,
+                path: s3Uri,
                 category: fileCategory,
                 userId,
             },
@@ -243,10 +249,13 @@ app.post("/upload", authenticateToken, upload.single("file"), async (req, res) =
 
         res.json({ message: "Upload saved", fileId: newFile.id, filename: newFile.filename, category: newFile.category });
     } catch (err) {
+        // If the object already exists, S3 returns 412
+        if (err?.$metadata?.httpStatusCode === 412) {
+        return res.status(409).json({ error: "File already exists (not overwritten)" });
+        }
         console.error("Upload error:", err);
-        res.status(500).json({ error: "Failed to save file" });
+        return res.status(500).json({ error: "Failed to save file" });
     }
-
 });
 
 app.get("/download/:fileId", authenticateToken, async (req, res) => {
@@ -256,16 +265,57 @@ app.get("/download/:fileId", authenticateToken, async (req, res) => {
         const file = await prisma.file.findUnique({ where: { id: parseInt(fileId) } });
         if (!file) return res.status(404).json({ error: "File not found" });
 
-        const filePath = file.path;
+        if (!file.path.startsWith("s3://")) {
+            return res.json({ url: `${process.env.API_BASE_URL}/download/${fileId}`});
+        }
 
-        if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File not found." });
+        const { bucket, key } = parseS3Uri(file.path);
 
-        res.download(filePath, file.filename);
+        const cmd = new GetObjectCommand({
+            Bucket: bucket,
+            Key: key,
+            ResponseContentDisposition: `attachment; filename="${file.filename}"`,
+        })
+
+        const url = await getSignedUrl(s3, cmd, { expiresIn: 60 * 5 });
+
+        res.json({ url});
     } catch (err) {
-        console.error("Download error:", err);
+        console.error("Presign error:", err);
         res.status(500).json({ error: "Internal server error" });
     }
 });
+
+async function deleteFromS3(s3Uri) {
+  const { bucket, key } = parseS3Uri(s3Uri);
+  if (!key) return; // nothing to delete
+  try {
+    await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+  } catch (err) {
+    // ignore "not found"; rethrow other errors
+    if (err?.$metadata?.httpStatusCode !== 404) throw err;
+  }
+}
+
+async function deleteManyFromS3(s3Uris = []) {
+  const items = s3Uris
+    .filter(Boolean)
+    .filter(isS3Uri)
+    .map(parseS3Uri)
+    .reduce((acc, { bucket, key }) => {
+      if (!key) return acc;
+      (acc[bucket] ||= []).push({ Key: key });
+      return acc;
+    }, {});
+
+  for (const [bucket, objects] of Object.entries(items)) {
+    // DeleteObjects supports up to 1000 keys per call
+    for (let i = 0; i < objects.length; i += 1000) {
+      const Chunk = objects.slice(i, i + 1000);
+      await s3.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: Chunk } }));
+    }
+  }
+}
 
 app.delete("/delete/:fileId", async (req, res) => {
     const { fileId } = req.params;
@@ -276,9 +326,7 @@ app.delete("/delete/:fileId", async (req, res) => {
 
         const filePath = file.path;
 
-        if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath); // Remove from disk
-        }
+        await deleteFromS3(filePath);
 
         await prisma.file.delete({ where: {id: parseInt(fileId) } }); // Remove from DB
 
@@ -290,55 +338,53 @@ app.delete("/delete/:fileId", async (req, res) => {
 });
 
 app.delete("/delete-fastq-analysis/:id", authenticateToken, async (req, res) => {
-    const userId = req.user?.userId;
-    const analysisId = parseInt(req.params.id, 10);
+  const userId = req.user?.userId;
+  const analysisId = Number(req.params.id);
+
+  try {
+    const analysis = await prisma.fastqAnalysis.findUnique({
+      where: { id: analysisId },
+      include: { fastqFileR1: true, fastqFileR2: true },
+    });
+
+    if (!analysis || analysis.userId !== userId) {
+      return res.status(404).json({ error: "Analysis not found" });
+    }
+
+    const fileIdsToDelete = [analysis.fastqFileR1Id, analysis.fastqFileR2Id].filter(Boolean);
+    const paths = [analysis.fastqFileR1?.path, analysis.fastqFileR2?.path].filter(Boolean);
+
+    // 1) Remove analysis first (FK-safe)
+    await prisma.fastqAnalysis.delete({ where: { id: analysisId } });
+
+    // 2) Delete files from DB
+    if (fileIdsToDelete.length) {
+      await prisma.file.deleteMany({ where: { id: { in: fileIdsToDelete } } });
+    }
+
+    // 3) Delete physical objects (S3 or local)
+    const s3Uris = paths.filter(isS3Uri);
+    const localPaths = paths.filter((p) => !isS3Uri(p));
 
     try {
-        const analysis = await prisma.fastqAnalysis.findUnique({
-            where: { id: analysisId },
-            include: {
-                fastqFileR1: true,
-                fastqFileR2: true,
-            },
-        });
-
-        if (!analysis || analysis.userId !== userId) {
-            return res.status(404).json({ error: "Analysis not found" });
-        }
-
-        const fileIdsToDelete = [
-            analysis.fastqFileR1Id,
-            analysis.fastqFileR2Id,
-        ];
-
-        // Delete the analysis first to avoid foreign key constraint errors
-        await prisma.fastqAnalysis.delete({
-            where: { id: analysisId },
-        });
-
-        // Now delete the associated files
-        await prisma.file.deleteMany({
-            where: {
-                id: { in: fileIdsToDelete },
-            },
-        });
-
-        try{
-        fs.unlinkSync(analysis.fastqFileR1.path);
-        } catch (e) {
-            console.warn("R1 file already missing: ${analysis.fastqFileR1.path}")
-        }
-        try{
-        fs.unlinkSync(analysis.fastqFileR2.path);
-        } catch (e) {
-            console.warn("R2 file already missing: ${analysis.fastqFileR2.path}")
-        }
-
-        res.json({ success: true });
-    } catch (err) {
-        console.error("Failed to delete analysis:", err);
-        res.status(500).json({ error: "Failed to delete analysis" });
+      if (s3Uris.length) await deleteManyFromS3(s3Uris);
+    } catch (e) {
+      console.warn(`S3 delete warning: ${e?.message || e}`);
     }
+
+    for (const p of localPaths) {
+      try {
+        if (fs.existsSync(p)) fs.unlinkSync(p);
+      } catch (e) {
+        console.warn(`Local file already missing: ${p}`);
+      }
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Failed to delete analysis:", err);
+    res.status(500).json({ error: "Failed to delete analysis" });
+  }
 });
 
 app.get("/fasta-files", authenticateToken, async (req, res) => {
@@ -422,7 +468,7 @@ app.post("/analyze-fasta", authenticateToken, async (req, res) => {
             return res.status(404).json({ error: "FASTA file not found."});
         }
 
-        const fastaPath = path.join(__dirname, "uploads", String(userId), fastaFile.category, fastaFile.filename);
+        const fastaPath = fastaFile.path;
         const scriptPath = path.join(__dirname, "scripts", "process_fasta.py");
         const venvPython = path.join(__dirname, "venv", "Scripts", "python.exe");
 
@@ -519,19 +565,19 @@ app.get("/run-pcr", authenticateToken, async (req, rew) => {
 
         const safeName = sampleName?.replace(/[^a-zA-Z0-9_\-]/g, "").replace(/\.(fastq|fq)(\.gz)?$/i, "");
         
-        const primerPath = path.join(__dirname, "uploads", String(userId), primerFile.category, primerFile.filename);
-        const referencePath = path.join(__dirname, "uploads", String(userId), referenceFile.category, referenceFile.filename);
-        const outputDir = path.join(__dirname, "uploads", String(userId), "pcr");
+        const primerPath = primerFile.path;
+        const referencePath = referenceFile.path;
+        const outputS3Prefix = `${USERDATA_BUCKET}/${userId}/pcr`;
         const scriptPath = path.join(__dirname, "scripts", "pcr.py");
         const venvPython = path.join(__dirname, "venv", "Scripts", "python.exe");
 
-        fs.mkdirSync(outputDir, { recursive: true });
+        // create_fastq.py args: --primer_path, --reference_path, --output_s3_prefix, --pcr_analysis_name, --cycle_count
 
         const args = [
             scriptPath,
             "--primer_path", primerPath,
             "--reference_path", referencePath,
-            "--output_dir", outputDir,
+            "--output_s3_prefix", outputS3Prefix,
             "--pcr_analysis_name", safeName,
             "--cycle_count", sequenceCount,
         ];
@@ -644,19 +690,19 @@ app.post("/create-fastq", authenticateToken, async (req, res) => {
 
         const safeName = sampleName?.replace(/[^a-zA-Z0-9_\-]/g, "").replace(/\.(fastq|fq)(\.gz)?$/i, "");
         
-        const primerPath = path.join(__dirname, "uploads", String(userId), primerFile.category, primerFile.filename);
-        const referencePath = path.join(__dirname, "uploads", String(userId), referenceFile.category, referenceFile.filename);
-        const outputDir = path.join(__dirname, "uploads", String(userId), "fastq");
+        const primerPath = primerFile.path;
+        const referencePath = referenceFile.path;
+        const outputS3Prefix = `${USERDATA_BUCKET}/${userId}/fastq`
         const scriptPath = path.join(__dirname, "scripts", "create_fastq.py");
         const venvPython = path.join(__dirname, "venv", "Scripts", "python.exe");
 
-        fs.mkdirSync(outputDir, { recursive: true });
+        // create_fastq.py args: --primer_path, --reference_path, --output_s3_prefix, --sample_name, --sequence_count
 
         const args = [
             scriptPath,
             "--primer_path", primerPath,
             "--reference_path", referencePath,
-            "--output_dir", outputDir,
+            "--output_s3_prefix", outputS3Prefix,
             "--sample_name", safeName,
             "--sequence_count", sequenceCount,
         ];
