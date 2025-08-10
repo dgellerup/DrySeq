@@ -16,6 +16,7 @@ from Bio.SeqRecord import SeqRecord
 from Bio import SeqIO
 from Bio.Seq import Seq
 
+
 def get_arguments() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser()
