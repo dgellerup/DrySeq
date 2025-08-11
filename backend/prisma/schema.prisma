@@ -29,6 +29,7 @@ enum FileCategory {
   GENOMIC
   PRIMER
   FASTQ
+  PCR
 }
 
 model File {

@@ -6,6 +6,8 @@ const jwt = require("jsonwebtoken");
 const path = require("path");
 const fs = require("fs");
 
+require("dotenv").config();
+
 const { PrismaClient, FileCategory } = require("@prisma/client");
 
 const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, DeleteObjectsCommand } = require("@aws-sdk/client-s3");
@@ -14,8 +16,13 @@ const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const s3 = new S3Client({ region: process.env.AWS_REGION });
 
 const app = express();
-const PORT = 5000;
-const SECRET = "queen-dinah-rules-seattle";
+const PORT = Number(process.env.PORT || 5000);
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET || JWT_SECRET.length < 32) {
+    throw new Error("JWT_SECRET is missing or too weak");
+}
+
 const USERDATA_BUCKET = process.env.USERDATA_BUCKET;
 
 const rateLimit = require("express-rate-limit");
@@ -29,8 +36,55 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // Enable CORS and JSON parsing
-app.use(cors({}));
+const origins = (process.env.FRONTEND_ORIGINS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+const corsOptions = {
+  origin(origin, cb) {
+    if (!origin) return cb(null, true);                 // Postman/curl
+    cb(null, origins.includes(origin));                  // strict allowlist
+  },
+  credentials: true,                                     // ok even if not using cookies
+  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization'],
+  exposedHeaders: ['Content-Disposition','Content-Length','ETag'],
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json());
+
+// Setup file uploads
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+const PYTHON_BIN =
+    process.env.PYTHON_BIN ||
+    (process.platform === 'win32'
+        ? path.join(__dirname, 'venv', 'Scripts', 'python.exe')
+        : 'python3');
+
+// Auth middleware
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers.authorization || "";
+  const [scheme, token] = authHeader.split(" ");
+  if (scheme !== "Bearer" || !token) return res.sendStatus(401);
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET, {
+      algorithms: ["HS256"],
+      // Optional hardening if you set these in sign():
+      issuer: "dryseq-api",
+      audience: "dryseq-frontend",
+      clockTolerance: 5, // seconds of skew
+    });
+    req.user = { userId: payload.userId, username: payload.username };
+    next();
+  } catch (e) {
+    return res.sendStatus(403);
+  }
+}
 
 const { execFile } = require("child_process");
 const prisma = new PrismaClient({
@@ -55,24 +109,19 @@ function normalizeFilename(name) {
   const spaced = lower.replace(/\s+/g, "_");
   return spaced.replace(/[^a-z0-9._-]/g, "_");
 }
-// Setup file uploads
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-// Auth middleware
-function authenticateToken(req, res, next) {
-    const authHeader = req.headers["authorization"];
-    const token = authHeader && authHeader.split(" ")[1];
-
-    if (!token) return res.sendStatus(401);
-    
-    jwt.verify(token, SECRET, (err, user) => {
-        if (err) return res.sendStatus(403);
-        req.user = { userId: user.userId, username: user.username };
-        next();
-    });
+const isS3Uri = (p) => typeof p === 'string' && p.startsWith('s3://');
+function parseS3Uri(uri) {
+    if (!isS3Uri(uri)) throw new Error('Not an S3 URI');
+    const rest = uri.slice(5);
+    const i = rest.indexOf('/');
+    if (i === -1) return { bucket: rest, key: '' };
+    return { bucket: rest.slice(0, i), key: rest.slice(i + 1) };
 }
 
 // Routes
+app.get('/health', (_req, res) => res.json({ ok: true }));
+
 app.post("/register", async (req, res) => {
     const { username, password, inviteCode } = req.body;
 
@@ -130,19 +179,22 @@ app.post("/login", async (req, res) => {
     const normalizedUsername = username.trim().toLowerCase();
 
     try {
-        const user = await prisma.user.findUnique({
-            where: { username: normalizedUsername },
-        });
+        const user = await prisma.user.findUnique({ where: { username: normalizedUsername } });
+        if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
-        if (!user || !bcrypt.compareSync(password, user.password)) {
-            return res.status(401).json({ error: "Invalid credentials" });
-        }
+        const ok = await bcrypt.compare(password, user.password); // async compare
+        if (!ok) return res.status(401).json({ error: "Invalid credentials" });
 
         // Generate JWT
         const token = jwt.sign(
             { userId: user.id, username: user.username },
-            SECRET,
-            { expiresIn: "1h"}
+            JWT_SECRET,
+            {
+                expiresIn: "1h",
+                algorithm: "HS256",
+                issuer: "dryseq-api",
+                audience: "dryseq-frontend",
+            }
         );
 
         res.json({ token });
@@ -258,14 +310,14 @@ app.post("/upload", authenticateToken, upload.single("file"), validateCategory, 
     }
 });
 
-app.get("/download/:fileId", authenticateToken, async (req, res) => {
+app.get("/download/:fileId/url", authenticateToken, async (req, res) => {
     const { fileId } = req.params;
 
     try {
         const file = await prisma.file.findUnique({ where: { id: parseInt(fileId) } });
         if (!file) return res.status(404).json({ error: "File not found" });
 
-        if (!file.path.startsWith("s3://")) {
+        if (!isS3Uri(file.path)) {
             return res.json({ url: `${process.env.API_BASE_URL}/download/${fileId}`});
         }
 
@@ -398,7 +450,7 @@ app.get("/fasta-files", authenticateToken, async (req, res) => {
     const files = await prisma.file.findMany({
         where: {
             userId,
-            category: { in: [FileCategory.GENOMIC, FileCategory.PRIMER] },
+            category: { in: [FileCategory.GENOMIC, FileCategory.PRIMER, FileCategory.PCR] },
         },
         include: {
             fastaAnalysis:true,
@@ -475,9 +527,8 @@ app.post("/analyze-fasta", authenticateToken, async (req, res) => {
 
         const fastaPath = fastaFile.path;
         const scriptPath = path.join(__dirname, "scripts", "process_fasta.py");
-        const venvPython = path.join(__dirname, "venv", "Scripts", "python.exe");
 
-        execFile(venvPython, [scriptPath, fastaPath], async (err, stdout, stderr) => {
+        execFile(PYTHON_BIN, [scriptPath, fastaPath], async (err, stdout, stderr) => {
             if (err) {
                 console.error("Python error:", stderr);
                 return res.status(500).json({ error: "Processing failed" });
@@ -521,24 +572,23 @@ app.post("/analyze-fasta", authenticateToken, async (req, res) => {
     }
 });
 
-app.post("/run-pcr", authenticateToken, async (req, rew) => {
-    const { primerFileId, referenceFileId, pcrAnalysisName, cycleCount } = req.body;
+app.post("/run-pcr", authenticateToken, async (req, res) => {
+    const { primerFileId, referenceFileId, pcrAnalysisName, cyclesCount } = req.body;
     const userId = req.user?.userId;
-
+    console.log(Object.keys(prisma.pcrAnalysis.fields));
     const existing = await prisma.pcrAnalysis.findUnique({
         where: {
-            userId_primerFileId_referenceFileId_pcrAnalysisName_cycleCount: {
+            userId_primerFileId_referenceFileId_pcrAnalysisName_cyclesCount: {
                 userId,
                 primerFileId,
                 referenceFileId,
                 pcrAnalysisName,
-                cycleCount,
+                cyclesCount,
             },
         },
         include: {
             primerFile: true,
             referenceFile: true,
-            cyclesCount: true,
         },
     });
 
@@ -548,7 +598,7 @@ app.post("/run-pcr", authenticateToken, async (req, rew) => {
             message: "PCR already exists",
             result: existing.result,
             files: [
-                { id: existing.primerFile?.id, filename: exitsing.primerFile?.filename },
+                { id: existing.primerFile?.id, filename: existing.primerFile?.filename },
                 { id: existing.referenceFile?.id, filename: existing.referenceFile?.filename },
             ],
         });
@@ -568,13 +618,12 @@ app.post("/run-pcr", authenticateToken, async (req, rew) => {
             return res.status(404).json({ error: "Primer or reference file not found or not owned by user" });
         }
 
-        const safeName = sampleName?.replace(/[^a-zA-Z0-9_\-]/g, "").replace(/\.(fastq|fq)(\.gz)?$/i, "");
+        const safeName = pcrAnalysisName?.replace(/[^a-zA-Z0-9_\-]/g, "").replace(/\.(fastq|fq)(\.gz)?$/i, "");
         
         const primerPath = primerFile.path;
         const referencePath = referenceFile.path;
-        const outputS3Prefix = `${USERDATA_BUCKET}/${userId}/pcr`;
+        const outputS3Prefix = `s3://${USERDATA_BUCKET}/${userId}/pcr`;
         const scriptPath = path.join(__dirname, "scripts", "pcr.py");
-        const venvPython = path.join(__dirname, "venv", "Scripts", "python.exe");
 
         // create_fastq.py args: --primer_path, --reference_path, --output_s3_prefix, --pcr_analysis_name, --cycle_count
 
@@ -584,11 +633,11 @@ app.post("/run-pcr", authenticateToken, async (req, rew) => {
             "--reference_path", referencePath,
             "--output_s3_prefix", outputS3Prefix,
             "--pcr_analysis_name", safeName,
-            "--cycle_count", sequenceCount,
+            "--cycle_count", cyclesCount,
         ];
 
         try {    
-            execFile(venvPython, args, async (err, stdout, stderr) => {
+            execFile(PYTHON_BIN, args, async (err, stdout, stderr) => {
                 console.log("execFile finished running");
                 console.log("STDOUT:", stdout);
                 console.error("STDERR:", stderr);
@@ -612,20 +661,18 @@ app.post("/run-pcr", authenticateToken, async (req, rew) => {
                     return res.status(500).json({ error: result.error || "Unknown failure" });
                 }
 
-                const pcrFilename = path.basename(result.pcr_path);
-
                 try {
-                    const pcrCreate = prisma.file.create({
+                    const pcrCreate = await prisma.file.create({
                             data: {
-                                filename: pcrFilename,
+                                filename: safeName,
                                 path: result.pcr_path,
-                                category: FileCategory.FASTA,
+                                category: FileCategory.PCR,
                                 userId,
                             },
                         });
 
                     res.json({
-                        message: "PCR files created successfully",
+                        message: "PCR file created successfully",
                         pcrAnalysisName: safeName,
                         file: pcrCreate,
                         path: result.pcr_path,
@@ -697,9 +744,8 @@ app.post("/create-fastq", authenticateToken, async (req, res) => {
         
         const primerPath = primerFile.path;
         const referencePath = referenceFile.path;
-        const outputS3Prefix = `${USERDATA_BUCKET}/${userId}/fastq`
+        const outputS3Prefix = `s3://${USERDATA_BUCKET}/${userId}/fastq`
         const scriptPath = path.join(__dirname, "scripts", "create_fastq.py");
-        const venvPython = path.join(__dirname, "venv", "Scripts", "python.exe");
 
         // create_fastq.py args: --primer_path, --reference_path, --output_s3_prefix, --sample_name, --sequence_count
 
@@ -713,7 +759,7 @@ app.post("/create-fastq", authenticateToken, async (req, res) => {
         ];
 
         try {    
-            execFile(venvPython, args, async (err, stdout, stderr) => {
+            execFile(PYTHON_BIN, args, async (err, stdout, stderr) => {
                 console.log("execFile finished running");
                 console.log("STDOUT:", stdout);
                 console.error("STDERR:", stderr);
@@ -812,8 +858,8 @@ app.get("/analyses", authenticateToken, async (req, res) => {
     res.json(analyses);
 });
 
-app.listen(PORT, () => {
-    console.log(`Server listening on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server listening on http://0.0.0.0:${PORT}`);
 });
 
 app.use((err, req, res, next) => {

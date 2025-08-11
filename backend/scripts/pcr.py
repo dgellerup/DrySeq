@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
+import os
+
+import smart_open
 
 import ahocorasick
 from Bio.SeqRecord import SeqRecord
@@ -16,16 +18,17 @@ def get_arguments() -> argparse.ArgumentParser:
 
     parser.add_argument("--primer_path", required=True, type=str)
     parser.add_argument("--reference_path", required=True, type=str)
-    parser.add_argument("--output_dir", required=True, type=str)
+    parser.add_argument("--output_s3_prefix", required=True, type=str)
     parser.add_argument("--pcr_analysis_name", required=True, type=str)
     parser.add_argument("--cycle_count", required=True, type=int)
 
     return parser.parse_args()
 
-def parse_fasta(file_path: Path) -> dict[str, str]:
+def parse_fasta(file_path: str) -> dict[str, str]:
     records = {}
-    for record in SeqIO.parse(file_path, "fasta"):
-        records[record.id] = str(record.seq)
+    with smart_open.open(file_path, "rt") as f_handle:
+        for record in SeqIO.parse(f_handle, "fasta"):
+            records[record.id] = str(record.seq)
     return records
 
 def find_primer_locations(reference_seq: str, primer_sequences: dict) -> list[tuple[str, int]]:
@@ -61,23 +64,23 @@ def generate_artificial_amplicons(reference_sequences: dict[str, str], primer_se
                 amplicons_dict[f"{reference_name}_{f_primer_name}_{r_primer_name}"] = amplicon_seq
     return amplicons_dict
 
-def write_pcr_fasta(amplicons_dict, pcr_analysis_name, output_dir):
-    pcr_path = output_dir / pcr_analysis_name
+def write_pcr_fasta(amplicons_dict: dict[str, str], pcr_analysis_name: str, output_s3_prefix: str):
+    pcr_path = f"{output_s3_prefix}/{pcr_analysis_name}.fasta"
 
-    with pcr_path.open("w") as f:
+    with smart_open.open(pcr_path, "w") as f:
         for key, seq in amplicons_dict.items():
             f.write(f">{key}\n{seq}\n")
 
     return pcr_path
 
-def run_pcr(primer_path: Path, reference_path: Path, output_dir: Path, pcr_analysis_name: str, cycle_count: int):
+def run_pcr(primer_path: str, reference_path: str, output_s3_prefix: str, pcr_analysis_name: str, cycle_count: int):
     try:
         primer_sequences = parse_fasta(primer_path)
         reference_sequences = parse_fasta(reference_path)
 
         amplicons_dict = generate_artificial_amplicons(reference_sequences, primer_sequences)
 
-        pcr_path = write_pcr_fasta(amplicons_dict, pcr_analysis_name, output_dir, cycle_count)
+        pcr_path = write_pcr_fasta(amplicons_dict, pcr_analysis_name, output_s3_prefix)
 
         result = {"status": "success",
                 "pcr_path": str(pcr_path),
@@ -98,15 +101,14 @@ if __name__ == "__main__":
     except Exception as e:
         result = {"status": "fail_args",
                 "error": str(e),
-                "r1_path": None,
-                "r2_path": None,
+                "pcr_path": None,
                 }
         print(json.dumps(result))
 
-    primer_path = Path(args.primer_path)
-    reference_path = Path(args.reference_path)
-    output_dir = Path(args.output_dir)
+    primer_path = args.primer_path
+    reference_path = args.reference_path
+    output_s3_prefix = args.output_s3_prefix
     pcr_analysis_name = args.pcr_analysis_name
     cycle_count = args.cycle_count
 
-    run_pcr(primer_path, reference_path, output_dir, pcr_analysis_name, cycle_count)
+    run_pcr(primer_path, reference_path, output_s3_prefix, pcr_analysis_name, cycle_count)

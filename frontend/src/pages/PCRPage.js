@@ -6,7 +6,7 @@ import { useAuth } from "../contexts/AuthContext";
 import "./AnalyzePage.css";
 
 export default function PCRPage() {
-    const [pcrRunName, setPcrRunName] = useState("");
+    const [pcrAnalysisName, setpcrAnalysisName] = useState("");
     const [cyclesCount, setCyclesCount] = useState("");
 
     const [primerFiles, setPrimerFiles] = useState([]);
@@ -51,7 +51,7 @@ export default function PCRPage() {
         const handleAnalyze = async (event) => {
             event.preventDefault();
     
-            if (!primerFile || !referenceFile || !pcrRunName || !cyclesCount) {
+            if (!primerFile || !referenceFile || !pcrAnalysisName || !cyclesCount) {
                 alert("Please fill in all fields.");
                 return;
             }
@@ -68,7 +68,7 @@ export default function PCRPage() {
                     body: JSON.stringify({
                         primerFileId: primerFile,
                         referenceFileId: referenceFile,
-                        pcrRunName: pcrRunName,
+                        pcrAnalysisName: pcrAnalysisName,
                         cyclesCount: cyclesCount,
                     }),
                 });
@@ -107,8 +107,8 @@ return (
                         <label>PCR Run Name:</label>
                         <input
                             type="text"
-                            value={pcrRunName}
-                            onChange={(e) => setPcrRunName(e.target.value)}
+                            value={pcrAnalysisName}
+                            onChange={(e) => setpcrAnalysisName(e.target.value)}
                             required
                         />
                     </div>
