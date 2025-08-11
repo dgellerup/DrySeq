@@ -50,6 +50,16 @@ export default function FileManagementPage() {
 
     }, [token, fetchFastaFiles, fetchFastqAnalyses]);
 
+async function getPresignedUrl(id, token) {
+    const res = await fetch(`http://localhost:5000/download/${id}/url`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+    });
+    if (!res.ok) throw new Error(`Presign failed (${res.status})`);
+    const { url } = await res.json();
+    return url;
+}
+
 const handleDownload = async (fileId) => {
     try {
         const fastaFile = fastaFiles.find((f) => f.id === fileId);
@@ -57,35 +67,29 @@ const handleDownload = async (fileId) => {
 
         if (fastaFile) {
             // Single file download (FASTA)
-            const res = await fetch(`http://localhost:5000/download/${fastaFile.id}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            const blob = await res.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = fastaFile.filename;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-        } else if (fastqAnalysis) {
-            // Download both R1 and R2 files
-            const r1 = fastqAnalysis.fastqFileR1;
-            const r2 = fastqAnalysis.fastqFileR2;
+            const url = await getPresignedUrl(fastaFile.id, token);
+            window.location.assign(url);
+            return;
+        }
+        
+        if (fastqAnalysis) {
 
-            for (const file of [r1, r2]) {
-                const res = await fetch(`http://localhost:5000/download/${file.id}`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-                const blob = await res.blob();
-                const url = window.URL.createObjectURL(blob);
+            const files = [fastqAnalysis.fastqFileR1, fastqAnalysis.fastqFileR2];
+
+            for (const file of files) {
+                const url = await getPresignedUrl(file.id, token);
+                // anchor click for reliability
                 const a = document.createElement("a");
                 a.href = url;
-                a.download = file.filename;
+                a.rel = "noopener";
+                a.target = "_blank";
                 document.body.appendChild(a);
                 a.click();
                 a.remove();
+                // small delay helps avoid being treated as popups
+                await new Promise((r) => setTimeout(r, 250));
             }
+            return;
         } else {
             console.warn("File or analysis not found");
         }

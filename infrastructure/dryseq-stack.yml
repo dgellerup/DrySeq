@@ -5,7 +5,7 @@
 #   --capabilities CAPABILITY_NAMED_IAM \
 #   --parameter-overrides \
 #       KeyPairName=my-key \
-#       DBMasterUserPassword=supersecret \
+#       VPC=vpc-id \
 #   --profile personal
 
 AWSTemplateFormatVersion: '2010-09-09'
@@ -16,24 +16,50 @@ Parameters:
     Description: Name of an existing EC2 KeyPair for SSH access
     Type: AWS::EC2::KeyPair::KeyName
 
-  DBMasterUserPassword:
-    Description: Password for RDS master user
-    Type: String
-    NoEcho: true
-    MinLength: 8
-
   VpcId:
     Type: AWS::EC2::VPC::Id
     Description: User your default VPC or a specific one
 
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public subnet for EC2 instance
+
+  DbPrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Two subnets in different AZs for RDS
+
+  AL2023Ami:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
 Resources:
+
+  # === Secrets ===
+
+  DrySeqDbMasterSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: dryseq/db/master
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"dryseqadmin"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludePunctuation: true
+
+  # === Subnets ===
+
+  DrySeqDbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: "DrySeq private DB subnets"
+      SubnetIds: !Ref DbPrivateSubnetIds
 
   # === S3 Buckets ===
 
   FrontendBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: dryseq-frontend
+      BucketName: "dryseq-frontend-${AWS::AccountId}-${AWS::Region}"
       WebsiteConfiguration:
         IndexDocument: index.html
         ErrorDocument: index.html
@@ -59,7 +85,13 @@ Resources:
   UploadsBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: dryseq-userdata
+      BucketName: "dryseq-userdata-${AWS::AccountId}-${AWS::Region}"
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [GET, PUT]
+            AllowedOrigins: ["*"]
+            AllowedHeaders: ["*"]
+            MaxAge: 3000
 
   # === IAM Role for EC2 ===
 
@@ -74,8 +106,45 @@ Resources:
             Principal:
               Service: ec2.amazonaws.com
             Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+      Policies:
+        - PolicyName: DrySeqUserdataAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # S3: app read/write in your userdata bucket
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                  - s3:AbortMultipartUpload
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "${UploadsBucket.Arn}"
+                  - !Sub "${UploadsBucket.Arn}/*"
+
+              # Secrets Manager: read only the dryseq/* secrets
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource:
+                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:dryseq/*"
+
+              # SSM Parameter Store: read only /dryseq/* parameters
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/dryseq/*"
+
+              - Effect: Allow
+                Action: [ kms:Decrypt ]
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub "ssm.${AWS::Region}.amazonaws.com"
 
   EC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -109,6 +178,9 @@ Resources:
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
 
   DBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -130,10 +202,11 @@ Resources:
       Engine: postgres
       EngineVersion: "17.5"
       MasterUsername: dryseqadmin
-      MasterUserPassword: !Ref DBMasterUserPassword
+      MasterUserPassword: '{{resolve:secretsmanager:dryseq/db/master:SecretString:password}}'
       DBInstanceClass: db.t3.micro
       AllocatedStorage: 20
-      PubliclyAccessible: true
+      PubliclyAccessible: false
+      DBSubnetGroupName: !Ref DrySeqDbSubnetGroup
       VPCSecurityGroups:
         - !GetAtt DBSecurityGroup.GroupId
       DBParameterGroupName: !Ref DrySeqDBParameterGroup
@@ -146,50 +219,83 @@ Resources:
       UpdateMessage: "DrySeqBackend v0.0.2"
     Properties:
       InstanceType: t3.micro
+      SubnetId: !Ref SubnetId
       KeyName: !Ref KeyPairName
       SecurityGroupIds:
         - !GetAtt EC2SecurityGroup.GroupId
       IamInstanceProfile: !Ref EC2InstanceProfile
-      ImageId: ami-0263dd5562cf9d185 # Amazon Linux 2023 AMI (us-east-1)
+      ImageId: !Ref AL2023Ami # Amazon Linux 2023 AMI (us-east-1)
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
           set -euxo pipefail
 
-          dnf update -y
+          # --- Log both stdout and stderr to a file for debugging ---
+          exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
 
-          # Install Node.js 20
-          dnf remove -y nodejs
+          REGION=${AWS::Region}
+
+          # --- System update and base tooling ---
+          dnf -y update
+          dnf -y remove nodejs || true
+          dnf -y install git python3 python3-pip jq awscli postgresql
+
+          # --- Node.js 20 via NodeSource (Amazon Linux 2023) ---
           curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
-          dnf install -y git nodejs python3 postgresql15
-          npm install -g pm2 serve
+          dnf -y install nodejs
+          npm install -g pm2
 
+          # --- Prepare app directory owned by ec2-user ---
           cd /home/ec2-user
-
           rm -rf DrySeq
           git clone --branch main https://github.com/dgellerup/DrySeq.git
-          cd DrySeq
+          chown -R ec2-user:ec2-user /home/ec2-user/DrySeq
 
-          echo "Current git commit:"
-          git log -1
+          # --- Fetch secrets (JWT from SSM, DB pass from Secrets Manager) ---
+          JWT_SECRET=$(aws ssm get-parameter \
+            --name /dryseq/jwt/secret \
+            --with-decryption \
+            --query Parameter.Value \
+            --output text \
+            --region "${REGION}")
 
-          cd backend
-          echo "DATABASE_URL=postgresql://dryseqadmin:${DBMasterUserPassword}@${DrySeqDB.Endpoint.Address}:5432/dryseq" > .env
-          npm install
-          npx prisma generate
-          npx prisma db push
+          DB_PASS=$(aws secretsmanager get-secret-value \
+            --secret-id dryseq/db/master \
+            --query SecretString \
+            --output text \
+            --region "${REGION}" | jq -r .password)
 
-          cd ../frontend
-          npm install
-          npm run build
-          pm2 start "serve -s build" --name dryseq-frontend
+          # --- Write .env for the backend (mode 600; readable by ec2-user) ---
+          cat > /home/ec2-user/DrySeq/backend/.env <<EOF
+          DATABASE_URL=postgresql://dryseqadmin:${DB_PASS}@${DrySeqDB.Endpoint.Address}:5432/dryseq?schema=public
+          AWS_REGION=${REGION}
+          USERDATA_BUCKET=${UploadsBucket}
+          FRONTEND_ORIGINS=http://${FrontendBucket}.s3-website-${REGION}.amazonaws.com,http://localhost:5173
+          JWT_SECRET=${JWT_SECRET}
+          PORT=80
+          EOF
+          chown ec2-user:ec2-user /home/ec2-user/DrySeq/backend/.env
+          chmod 600 /home/ec2-user/DrySeq/backend/.env
 
-          cd ../backend
-          pm2 start server.js --name dryseq-backend
-          pm2 save
+          # --- Allow non-root (ec2-user) Node to bind to port 80 ---
+          setcap 'cap_net_bind_service=+ep' "$(readlink -f "$(command -v node)")" || true
 
-          # Final permission fix
-          chown -R ec2-user:ec2-user /home/ec2-user
+          # --- Install backend deps & Prisma as ec2-user ---
+          runuser -l ec2-user -c 'cd ~/DrySeq/backend && ( [ -f package-lock.json ] && npm ci || npm install )'
+          runuser -l ec2-user -c 'cd ~/DrySeq/backend && npx prisma generate'
+          # For dev schemas: db push. For prod migrations, consider: npx prisma migrate deploy
+          runuser -l ec2-user -c 'cd ~/DrySeq/backend && npx prisma db push'
+
+          # --- Optional Python libs for PCR scripting ---
+          python3 -m pip install --upgrade pip
+          python3 -m pip install biopython smart_open boto3
+
+          # --- Start backend under PM2 as ec2-user on port 80, persist across reboots ---
+          runuser -l ec2-user -c 'cd ~/DrySeq/backend && pm2 start server.js --name dryseq-backend --update-env'
+          runuser -l ec2-user -c 'pm2 save'
+          pm2 startup systemd -u ec2-user --hp /home/ec2-user
+
+          echo "UserData complete."
 
   
   DrySeqEIP:
@@ -222,3 +328,9 @@ Outputs:
     Value: !Ref DrySeqEIP
     Export:
       Name: DrySeq-InstancePublicIP
+
+  FrontendBucketName:
+    Value: !Ref FrontendBucket
+  
+  UploadsBucketName:
+    Value: !Ref UploadsBucket
