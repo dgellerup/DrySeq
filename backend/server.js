@@ -453,13 +453,10 @@ app.get("/fasta-files", authenticateToken, async (req, res) => {
         },
         include: {
             fastaAnalysis:true,
-            primerAnalyses: {
-                include: {
-                    fastqFileR1: true,
-                    fastqFileR2: true,
-                },
-            },
-            referenceAnalyses: {
+            producedByPcr: true,
+            usedAsPrimerInPcr: true,
+            usedAsReferenceInPcr: true,
+            usedForFastq: {
                 include: {
                     fastqFileR1: true,
                     fastqFileR2: true,
