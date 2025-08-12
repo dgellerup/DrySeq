@@ -55,9 +55,10 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-app.use('/api', (req, res, next) => {
-    req.url = req.url.replace(/^\/api/, '');
-    next();
+app.use((req, _res, next) => {
+  if (req.url === '/api') req.url = '/';
+  else if (req.url.startsWith('/api/')) req.url = req.url.slice(4);
+  next();
 });
 
 // Setup file uploads
