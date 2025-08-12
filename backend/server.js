@@ -453,13 +453,10 @@ app.get("/fasta-files", authenticateToken, async (req, res) => {
         },
         include: {
             fastaAnalysis:true,
-            primerAnalyses: {
-                include: {
-                    fastqFileR1: true,
-                    fastqFileR2: true,
-                },
-            },
-            referenceAnalyses: {
+            producedByPcr: true,
+            usedAsPrimerInPcr: true,
+            usedAsReferenceInPcr: true,
+            usedForFastq: {
                 include: {
                     fastqFileR1: true,
                     fastqFileR2: true,
@@ -491,20 +488,16 @@ app.get("/fastq-files", authenticateToken, async (req, res) => {
         include: {
             fastqFileR1: true,
             fastqFileR2: true,
-            primerFile: true,
-            referenceFile: true,
+            pcrFile: true,
         },
     });
 
     const hydrated = analyses.map((analysis) => ({
         ...analysis,
-        primerFilename: analysis.primerFile
-            ? analysis.primerFile.filename
-            : `${analysis.primerFilename} (Deleted)`,
+        pcrFilename: analysis.pcrFile
+            ? analysis.pcrFile.filename
+            : `${analysis.pcrFilename} (Deleted)`,
         
-        referenceFilename: analysis.referenceFile
-            ? analysis.referenceFile.filename
-            : `${analysis.referenceFilename} (Deleted)`
     }));
 
     res.json(hydrated);
@@ -672,6 +665,24 @@ app.post("/run-pcr", authenticateToken, async (req, res) => {
                             },
                         });
 
+                    await prisma.pcrAnalysis.create({
+                        data: {
+                            userId,
+                            pcrAnalysisName: safeName,
+                            cyclesCount,
+
+                            pcrFileId: pcrCreate.id,
+                            pcrFilename: pcrCreate.filename,   // <-- correct key
+
+                            primerFileId: primerFile.id,
+                            primerFilename: primerFile.filename,
+
+                            referenceFileId: referenceFile.id,
+                            referenceFilename: referenceFile.filename,
+
+                            result: JSON.stringify(result),
+                        },
+                    });
                     
                     res.json({
                         message: "PCR file created successfully",

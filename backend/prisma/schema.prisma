@@ -41,19 +41,22 @@ model File {
   userId     Int
   user       User         @relation(fields: [userId], references: [id])
 
-  // Existing (non-PCR)
-  fastaAnalysis   FastaAnalysis? @relation("FastaFile")
+  // FASTA 1:1
+  fastaAnalysis FastaAnalysis? @relation("FastaFile")
+
+  // FASTQ outputs (paired) 1:1 each
   fastqAnalysisR1 FastqAnalysis? @relation("FastqFileR1")
   fastqAnalysisR2 FastqAnalysis? @relation("FastqFileR2")
 
-  // Existing Fastq back-relations (keep these names if your FastqAnalysis uses them)
-  primerAnalyses    FastqAnalysis[] @relation("PrimerFile")
-  referenceAnalyses FastqAnalysis[] @relation("ReferenceFile")
+  // Fastq uses PCR file as input — backref from FastqAnalysis.pcrFile
+  usedForFastq FastqAnalysis[] @relation("FastqFromPcr")
 
-  // PCR back-relations — NEW (names must match below)
-  pcrAnalysis          PcrAnalysis?  @relation("PcrFile") // 1:1 backref for output
-  usedAsPrimerInPcr    PcrAnalysis[] @relation("PcrPrimerFile") // many PCR analyses can share a primer file
-  usedAsReferenceInPcr PcrAnalysis[] @relation("PcrReferenceFile") // many PCR analyses can share a reference file
+  // PCR output — backref from PcrAnalysis.pcrFile
+  producedByPcr PcrAnalysis? @relation("PcrOutputFile")
+
+  // PCR inputs — backrefs from PcrAnalysis.primerFile / referenceFile
+  usedAsPrimerInPcr    PcrAnalysis[] @relation("PcrPrimerFile")
+  usedAsReferenceInPcr PcrAnalysis[] @relation("PcrReferenceFile")
 
   @@unique([filename, userId])
 }
@@ -80,12 +83,12 @@ model PcrAnalysis {
   pcrAnalysisName String
   cyclesCount     Int
 
-  // One analysis -> one output file
-  pcrFile     File?  @relation("PcrFile", fields: [pcrFileId], references: [id], onDelete: Cascade)
+  // One analysis -> one PCR output file
+  pcrFile     File?  @relation("PcrOutputFile", fields: [pcrFileId], references: [id], onDelete: Cascade)
   pcrFileId   Int?   @unique
   pcrFilename String
 
-  // Distinct relation names for PCR to avoid clashing with FastqAnalysis
+  // Inputs (still stored here)
   primerFile     File?  @relation("PcrPrimerFile", fields: [primerFileId], references: [id], onDelete: SetNull)
   primerFileId   Int?
   primerFilename String
@@ -109,14 +112,16 @@ model FastqAnalysis {
   sampleName    String
   sequenceCount Int
 
+  // Paired FASTQ outputs
   fastqFileR1   File @relation("FastqFileR1", fields: [fastqFileR1Id], references: [id], onDelete: Cascade)
   fastqFileR1Id Int  @unique
 
   fastqFileR2   File @relation("FastqFileR2", fields: [fastqFileR2Id], references: [id], onDelete: Cascade)
   fastqFileR2Id Int  @unique
 
-  pcrFile     File?  @relation("PcrFile", fields: [pcrFileId], references: [id], onDelete: SetNull)
+  // If FASTQ came from a PCR output file:
   pcrFileId   Int?
+  pcrFile     File?  @relation("FastqFromPcr", fields: [pcrFileId], references: [id], onDelete: SetNull)
   pcrFilename String
 
   result    String
