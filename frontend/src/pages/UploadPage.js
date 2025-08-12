@@ -5,9 +5,13 @@ import { useAuth } from "../contexts/AuthContext";
 
 import { API_BASE } from "../api";
 
+import "./AnalyzePage.css";
+
 export default function UploadPage() {
     const [file, setFile] = useState(null);
-    const [category, setCategory] = useState("genomic");
+    const [category, setCategory] = useState("");
+
+    const [loading, setLoading] = useState("");
 
     const { token } = useAuth();
 
@@ -18,6 +22,8 @@ export default function UploadPage() {
         const formData = new FormData();
         formData.append("file", file);
         formData.append("category", category);
+
+        setLoading(true);
 
         let data = null;
         try {
@@ -45,6 +51,8 @@ export default function UploadPage() {
         } catch (err) {
           const errorMsg = "Upload: Could not connect to the server.";
           toast.info(errorMsg);
+        } finally {
+          setLoading(false);
         }
 
         try {
@@ -75,20 +83,62 @@ export default function UploadPage() {
     };
 
     return (
-    <div>
-      <h2>Upload FASTA File</h2>
-      {!token ? (
-        <p>Please log in</p>
-      ) : (
-        <form onSubmit={handleUpload}>
-          <input type="file" onChange={(e) => setFile(e.target.files[0])} accept=".fa,.fasta" required />
-          <select value={category} onChange={(e) => setCategory(e.target.value)}>
-            <option value="genomic">Genomic</option>
-            <option value="primer">Primer</option>
-          </select>
-          <button type="submit">Upload</button>
-        </form>
-      )}
-    </div>
-  );
+      <div className="analyze-container">
+        <h2 className="analyze-title">Upload FASTA File</h2>
+        {!token ? (
+          <p>Please log in</p>
+        ) : (
+          <form onSubmit={handleUpload}>
+            <div>
+              <label>Select File</label>
+              <input
+                type="file"
+                onChange={(e) => setFile(e.target.files[0])}
+                accept=".fa,.fasta"
+                required />
+            </div>
+
+            <fieldset className="field">
+              <label>Select Category</label>
+
+              <div className="seg" role="radiogroup" aria-label="Select Category">
+                <label className={`seg-pill ${category === 'genomic' ? 'is-active' : ''}`}>
+                  <input
+                    className="sr-only"
+                    type="radio"
+                    name="category"
+                    value="genomic"
+                    checked={category === 'genomic'}
+                    onChange={(e) => setCategory(e.target.value)}
+                    required={!category}              // force a choice
+                  />
+                  <span>Genomic</span>
+                </label>
+
+                <label className={`seg-pill ${category === 'primer' ? 'is-active' : ''}`}>
+                  <input
+                    className="sr-only"
+                    type="radio"
+                    name="category"
+                    value="primer"
+                    checked={category === 'primer'}
+                    onChange={(e) => setCategory(e.target.value)}
+                    required={!category}
+                  />
+                  <span>Primer</span>
+                </label>
+              </div>
+            </fieldset>
+
+            <button
+              type="submit"
+              disabled={!category}
+              style={{ marginTop: "15px" }}
+            >
+              {loading ? "Uploading..." : "Upload"}
+            </button>
+          </form>
+        )}
+      </div>
+    );
 }
