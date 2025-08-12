@@ -33,7 +33,11 @@ export default function HomePage() {
     }
 
     useEffect(() => {
-        if (!token) return;
+        if (!token) {
+            setFastaFiles([]);
+            setFastqAnalyses([]);
+            return;
+        }
 
         fetchFastaFiles();
         fetchFastqAnalyses();
