@@ -115,18 +115,14 @@ model FastqAnalysis {
   fastqFileR2   File @relation("FastqFileR2", fields: [fastqFileR2Id], references: [id], onDelete: Cascade)
   fastqFileR2Id Int  @unique
 
-  primerFile     File?  @relation("PrimerFile", fields: [primerFileId], references: [id], onDelete: SetNull)
-  primerFileId   Int?
-  primerFilename String
-
-  referenceFile     File?  @relation("ReferenceFile", fields: [referenceFileId], references: [id], onDelete: SetNull)
-  referenceFileId   Int?
-  referenceFilename String
+  pcrFile     File?  @relation("PcrFile", fields: [pcrFileId], references: [id], onDelete: SetNull)
+  pcrFileId   Int?
+  pcrFilename String
 
   result    String
   createdAt DateTime @default(now())
 
-  @@unique([userId, sampleName, primerFileId, referenceFileId, sequenceCount, analysisName])
+  @@unique([userId, sampleName, pcrFileId, sequenceCount, analysisName])
 }
 
 model InviteCode {
