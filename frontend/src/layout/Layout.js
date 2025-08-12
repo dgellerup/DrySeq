@@ -54,7 +54,7 @@ export default function Layout({ children }) {
                     </Link>
                     <Link to="/analyze" className={`sidebar-link ${currentPath === "/analyze" ? "active" : ""}`}>
                         <Binary size={18} style={{ marginRight: "8px" }} />
-                        Analyze
+                        FASTQ
                     </Link>
                 </nav>
 
