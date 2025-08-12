@@ -1,7 +1,7 @@
 // src/api.js
 
 // CRA reads REACT_APP_* at build time
-export const API_BASE = (process.env.REACT_APP_API_BASE || 'http://localhost:5000').replace(/\/$/, '');
+const API_BASE = (process.env.REACT_APP_API_BASE || 'http://localhost:5000').replace(/\/$/, '');
 
 async function request(path, { method = 'GET', token, headers = {}, body } = {}) {
   const isForm = body instanceof FormData;

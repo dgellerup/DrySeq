@@ -241,67 +241,83 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash
           set -euxo pipefail
+          exec > >(tee /var/log/user-data.log | logger -t user-data -s 2>/dev/console) 2>&1
 
-          # --- Log both stdout and stderr to a file for debugging ---
-          exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+          REGION=${AWS::Region}
+          BACKEND_DIR=/home/ec2-user/DrySeq/backend
+          VENV_DIR="$BACKEND_DIR/.venv"
+          PYTHON_BIN="$VENV_DIR/bin/python"
 
-          # --- System update and base tooling ---
+          # ---------- ROOT: system packages ----------
           dnf -y update
           dnf -y remove nodejs || true
-          dnf -y install git python3 python3-pip jq awscli postgresql17
-
-          # --- Node.js 20 via NodeSource (Amazon Linux 2023) ---
+          dnf -y install git python3 python3-pip jq awscli postgresql17 # psql client
           curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
           dnf -y install nodejs
           npm install -g pm2
 
-          # --- Prepare app directory owned by ec2-user ---
-          cd /home/ec2-user
-          rm -rf DrySeq
-          git clone --branch main https://github.com/dgellerup/DrySeq.git
-          chown -R ec2-user:ec2-user /home/ec2-user/DrySeq
+          # ---------- ec2-user: get code ----------
+          runuser -l ec2-user -c '
+            cd ~
+            rm -rf DrySeq || true
+            git clone --branch main https://github.com/dgellerup/DrySeq.git
+          '
 
-          # --- Fetch secrets (JWT from SSM, DB pass from Secrets Manager) ---
+          # ---------- ROOT: fetch secrets and write .env ----------
           JWT_SECRET=$(aws ssm get-parameter \
             --name /dryseq/jwt/secret \
             --with-decryption \
             --query Parameter.Value \
             --output text \
-            --region ${AWS::Region})
+            --region "$REGION")
 
           DB_PASS=$(aws secretsmanager get-secret-value \
             --secret-id dryseq/db/master \
             --query SecretString \
             --output text \
-            --region ${AWS::Region} | jq -r .password)
+            --region "$REGION" | jq -r .password)
 
-          # --- Write .env for the backend (mode 600; readable by ec2-user) ---
-          cat > /home/ec2-user/DrySeq/backend/.env <<EOF
-          DATABASE_URL=postgresql://dryseqadmin:$DB_PASS@${DrySeqDB.Endpoint.Address}:5432/dryseq?schema=public
-          AWS_REGION=${AWS::Region}
+          cat > "$BACKEND_DIR/.env" <<EOF
+          DATABASE_URL=postgresql://dryseqadmin:${DB_PASS}@${DrySeqDB.Endpoint.Address}:5432/dryseq?schema=public
+          AWS_REGION=${REGION}
           USERDATA_BUCKET=${UploadsBucket}
-          FRONTEND_ORIGINS=http://${FrontendBucket}.s3-website-${AWS::Region}.amazonaws.com,http://localhost:5173
-          JWT_SECRET=$JWT_SECRET
+          FRONTEND_ORIGINS=http://${FrontendBucket}.s3-website-${REGION}.amazonaws.com,http://localhost:5173
+          JWT_SECRET=${JWT_SECRET}
           PORT=80
+          PYTHON_BIN=${PYTHON_BIN}
           EOF
-          chown ec2-user:ec2-user /home/ec2-user/DrySeq/backend/.env
-          chmod 600 /home/ec2-user/DrySeq/backend/.env
+          chown ec2-user:ec2-user "$BACKEND_DIR/.env"
+          chmod 600 "$BACKEND_DIR/.env"
 
-          # --- Allow non-root (ec2-user) Node to bind to port 80 ---
+          # Allow node to bind to :80 (ignore if already set)
           setcap 'cap_net_bind_service=+ep' "$(readlink -f "$(command -v node)")" || true
 
-          # --- Install backend deps & Prisma as ec2-user ---
-          runuser -l ec2-user -c 'cd ~/DrySeq/backend && ( [ -f package-lock.json ] && npm ci || npm install )'
-          runuser -l ec2-user -c 'cd ~/DrySeq/backend && npx prisma generate'
-          runuser -l ec2-user -c 'cd ~/DrySeq/backend && npx prisma db push'
+          # ---------- ec2-user: Python venv + deps ----------
+          runuser -l ec2-user -c "
+            cd '$BACKEND_DIR'
+            python3 -m venv .venv
+            source .venv/bin/activate
+            python -m pip install --upgrade pip wheel
+            # install ONLY your backend requirements (keep this file slim)
+            python -m pip install -r requirements.txt --no-cache-dir
+          "
 
-          # --- Optional Python libs for PCR scripting ---
-          python3 -m pip install --upgrade pip
-          python3 -m pip install biopython smart_open boto3
+          # ---------- ec2-user: Node deps + Prisma ----------
+          runuser -l ec2-user -c "
+            cd '$BACKEND_DIR'
+            [ -f package-lock.json ] && npm ci || npm install
+            npx prisma generate
+            npx prisma db push
+          "
 
-          # --- Start backend under PM2 as ec2-user on port 80, persist across reboots ---
-          runuser -l ec2-user -c 'cd ~/DrySeq/backend && pm2 start server.js --name dryseq-backend --update-env'
-          runuser -l ec2-user -c 'pm2 save'
+          # ---------- ec2-user: start app under PM2 ----------
+          runuser -l ec2-user -c "
+            cd '$BACKEND_DIR'
+            pm2 start server.js --name dryseq-backend --update-env
+            pm2 save
+          "
+
+          # ---------- ROOT: enable PM2 at boot for ec2-user ----------
           pm2 startup systemd -u ec2-user --hp /home/ec2-user
 
           echo "UserData complete."
