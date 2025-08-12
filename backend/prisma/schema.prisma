@@ -128,15 +128,6 @@ model FastqAnalysis {
   pcrFile     File?  @relation("FastqFromPcr", fields: [pcrFileId], references: [id], onDelete: SetNull)
   pcrFilename String
 
-  // (For UI display) keep soft links to primer/reference too
-  primerFileId   Int?
-  primerFile     File?  @relation("PrimerFile", fields: [primerFileId], references: [id], onDelete: SetNull)
-  primerFilename String
-
-  referenceFileId   Int?
-  referenceFile     File?  @relation("ReferenceFile", fields: [referenceFileId], references: [id], onDelete: SetNull)
-  referenceFilename String
-
   result    String
   createdAt DateTime @default(now())
 
