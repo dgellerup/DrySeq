@@ -165,7 +165,7 @@ const handleDownload = async (fileId) => {
 
     const getSequenceCount = (file) => {
         
-        if (file.category === "GENOMIC" || file.category === "PRIMER") {
+        if (file.category === "GENOMIC" || file.category === "PRIMER" || file.category === "PCR") {
             const match = file.fastaAnalysis?.result?.match(/Found (\d+) sequences/i);
             return match ? parseInt(match[1], 10) : "N/A";
         }

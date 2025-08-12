@@ -8,7 +8,7 @@ import { API_BASE } from "../api";
 
 export default function PCRPage() {
     const [pcrAnalysisName, setpcrAnalysisName] = useState("");
-    const [cyclesCount, setCyclesCount] = useState("");
+    const cyclesCount = 50;
 
     const [primerFiles, setPrimerFiles] = useState([]);
     const [referenceFiles, setReferenceFiles] = useState([]);
@@ -115,6 +115,7 @@ export default function PCRPage() {
             const message = `${data.filename} processed successfully.`;
 
             toast.info(message);
+            
         } catch (err) {
             const errorMsg = "PCR Analysis: Could not connect to the server.";
             toast.info(errorMsg);
@@ -140,7 +141,7 @@ return (
                         />
                     </div>
 
-                    <div>
+                    {/* <div>
                         <label>Number of Cycles (max 50):</label>
                         <input
                             type="number"
@@ -150,7 +151,7 @@ return (
                             onChange={(e) => setCyclesCount(parseInt(e.target.value))}
                             required
                         />
-                    </div>
+                    </div> */}
 
                     <div>
                         <label>Primer File:</label>
