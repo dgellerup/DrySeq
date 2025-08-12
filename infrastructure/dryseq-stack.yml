@@ -281,7 +281,7 @@ Resources:
           DATABASE_URL=postgresql://dryseqadmin:${DB_PASS}@${DrySeqDB.Endpoint.Address}:5432/dryseq?schema=public
           AWS_REGION=${REGION}
           USERDATA_BUCKET=${UploadsBucket}
-          FRONTEND_ORIGINS=http://${FrontendBucket}.s3-website-${REGION}.amazonaws.com,http://localhost:5173
+          FRONTEND_ORIGINS=http://${FrontendBucket}.s3-website-${REGION}.amazonaws.com,http://dryseq.com,http://www.dryseq.com,http://localhost:5173
           JWT_SECRET=${JWT_SECRET}
           PORT=80
           PYTHON_BIN=${PYTHON_BIN}

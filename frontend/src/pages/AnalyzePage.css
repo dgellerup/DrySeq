@@ -83,3 +83,42 @@
     display: block;
     box-sizing: border-box;
 }
+
+.field { border: 0; margin: 16px 0; padding: 0; }
+
+
+.seg { display: flex; gap: 12px; align-items: center; }
+
+.seg-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 9999px;          /* pill */
+  background: #fff;
+  cursor: pointer;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+
+.seg-pill:hover { border-color: #cbd5e1; }
+.seg-pill.is-active { border-color: #4f46e5; background: #f5f7ff; }
+
+/* Hide the native radio but keep it accessible */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0);
+  white-space: nowrap; border: 0;
+}
+
+/* Keyboard focus ring */
+.sr-only:focus-visible + span {
+  outline: 2px solid #4f46e5;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Optional: bolder label text */
+.seg-pill span { font-weight: 600; }
