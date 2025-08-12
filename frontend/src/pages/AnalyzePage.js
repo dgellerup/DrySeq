@@ -37,7 +37,6 @@ export default function AnalyzePage() {
                 const pcrs = files.filter(file => file.category === "PCR");
 
                 setPcrFiles(pcrs);
-                setReferenceFiles(genomics);
             } catch (err) {
                 console.error("Error fetching files:", err);
             }
