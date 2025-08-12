@@ -52,54 +52,76 @@ export default function FileManagementPage() {
 
     }, [token, fetchFastaFiles, fetchFastqAnalyses]);
 
-async function getPresignedUrl(id, token) {
-    const res = await fetch(`${API_BASE}/download/${id}/url`, {
-        headers: { Authorization: `Bearer ${token}` },
-        credentials: "include",
-    });
-    if (!res.ok) throw new Error(`Presign failed (${res.status})`);
-    const { url } = await res.json();
-    return url;
-}
-
-const handleDownload = async (fileId) => {
-    try {
-        const fastaFile = fastaFiles.find((f) => f.id === fileId);
-        const fastqAnalysis = fastqAnalyses.find((a) => a.id === fileId);
-
-        if (fastaFile) {
-            // Single file download (FASTA)
-            const url = await getPresignedUrl(fastaFile.id, token);
-            window.location.assign(url);
-            return;
-        }
-        
-        if (fastqAnalysis) {
-
-            const files = [fastqAnalysis.fastqFileR1, fastqAnalysis.fastqFileR2];
-
-            for (const file of files) {
-                const url = await getPresignedUrl(file.id, token);
-                // anchor click for reliability
-                const a = document.createElement("a");
-                a.href = url;
-                a.rel = "noopener";
-                a.target = "_blank";
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                // small delay helps avoid being treated as popups
-                await new Promise((r) => setTimeout(r, 250));
-            }
-            return;
-        } else {
-            console.warn("File or analysis not found");
-        }
-    } catch (err) {
-        console.error("Failed to download file(s):", err);
-        toast.error("Download failed.");
+    async function getPresignedUrl(id, token) {
+        const res = await fetch(`${API_BASE}/download/${id}/url`, {
+            headers: { Authorization: `Bearer ${token}` },
+            credentials: "include",
+        });
+        if (!res.ok) throw new Error(`Presign failed (${res.status})`);
+        const { url } = await res.json();
+        return url;
     }
-};
+
+    const downloadFastqZip = async (analysis) => {
+        try {
+            const res = await fetch(`${API_BASE}/download-fastq/${analysis.id}/zip`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) throw new Error(`Zip download failed (${res.status})`);
+
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${analysis.analysisName || 'fastq'}_${analysis.id}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            console.error(e);
+            toast.error('ZIP download failed');
+        }
+    };
+
+    const handleDownload = async (fileId) => {
+        try {
+            const fastaFile = fastaFiles.find((f) => f.id === fileId);
+            const fastqAnalysis = fastqAnalyses.find((a) => a.id === fileId);
+
+            if (fastaFile) {
+                // Single file download (FASTA)
+                const url = await getPresignedUrl(fastaFile.id, token);
+                window.location.assign(url);
+                return;
+            }
+            
+            if (fastqAnalysis) {
+
+                const files = [fastqAnalysis.fastqFileR1, fastqAnalysis.fastqFileR2];
+
+                for (const file of files) {
+                    const url = await getPresignedUrl(file.id, token);
+                    // anchor click for reliability
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.rel = "noopener";
+                    a.target = "_blank";
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    // small delay helps avoid being treated as popups
+                    await new Promise((r) => setTimeout(r, 250));
+                }
+                return;
+            } else {
+                console.warn("File or analysis not found");
+            }
+        } catch (err) {
+            console.error("Failed to download file(s):", err);
+            toast.error("Download failed.");
+        }
+    };
 
     const handleDeleteFastaClick = (file) => {
         setFileToDelete(file);
@@ -243,7 +265,7 @@ const handleDownload = async (fileId) => {
                                 key={analysis.id}
                                 analysis={analysis}
                                 onDelete={() => handleDeleteFastqClick(analysis)}
-                                onDownload={() => handleDownload(analysis.id)}
+                                onDownload={() => downloadFastqZip(analysis)}
                             />
                             ))}
                     </tbody>

@@ -343,6 +343,44 @@ app.get("/download/:fileId/url", authenticateToken, async (req, res) => {
     }
 });
 
+app.get('/download-fastq/:analysisId/zip', authenticateToken, async (req, res) => {
+    const analysisId = Number(req.params.analysisId);
+    const userId = req.user?.userId;
+
+    try {
+        const analysis = await prisma.fastqAnalysis.findUnique({
+            where: { id: analysisId },
+            include: { fastqFileR1: true, fastqFileR2: true }
+        });
+        if (!analysis || analysis.userId !== userId) {
+            return res.status(404).json({ error: 'Analysis not found' });
+        }
+
+        const files = [analysis.fastqFileR1, analysis.fastqFileR2].filter(Boolean);
+        if (files.length === 0) return res.status(404).json({ error: 'No FASTQ files' });
+
+        const zipName = `${analysis.analysisName || 'fastq'}_${analysis.id}.zip`;
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
+
+        const archive = archiver('zip', { zlib: { level: 9 }});
+        archive.on('error', (err) => { console.error(err); res.status(500).end(); });
+        archive.pipe(res);
+
+        for (const f of files) {
+            const { bucket, key } = parseS3Uri(f.path);
+            const obj = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+            const entryName = f.filename || key.split('/').pop();
+            archive.append(obj.Body, { name: entryName });
+        }
+
+        archive.finalize();
+    } catch (err) {
+        console.error('ZIP download error:', err);
+        res.status(500).json({ error: 'Failed to build ZIP' });
+    }
+});
+
 async function deleteFromS3(s3Uri) {
   const { bucket, key } = parseS3Uri(s3Uri);
   if (!key) return; // nothing to delete
