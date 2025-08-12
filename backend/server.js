@@ -55,6 +55,11 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
+app.use('/api', (req, res, next) => {
+    req.url = req.url.replace(/^\/api/, '');
+    next();
+});
+
 // Setup file uploads
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
