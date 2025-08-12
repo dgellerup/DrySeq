@@ -3,6 +3,8 @@ import { toast } from "react-toastify";
 
 import { useAuth } from "../contexts/AuthContext";
 
+import { API_BASE } from "../api";
+
 import "./AnalyzePage.css";
 
 export default function AnalyzePage() {
@@ -21,7 +23,7 @@ export default function AnalyzePage() {
     useEffect(() => {
         const fetchFiles = async () => {
             try {
-                const res = await fetch("http://localhost:5000/fasta-files", {
+                const res = await fetch(`${API_BASE}/fasta-files`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
 
@@ -59,7 +61,7 @@ export default function AnalyzePage() {
         setLoading(true);
 
         try {
-            const res = await fetch("http://localhost:5000/create-fastq", {
+            const res = await fetch(`${API_BASE}/create-fastq`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",

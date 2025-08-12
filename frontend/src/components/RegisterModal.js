@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { toast } from "react-toastify";
 
+import { API_BASE } from "../api";
+
 import "./LoginModal.css"; // reuse styles
 
 export default function RegisterModal({ onClose, onRegisterSuccess }) {
@@ -30,7 +32,7 @@ export default function RegisterModal({ onClose, onRegisterSuccess }) {
             return;
         }
 
-        const res = await fetch("http://localhost:5000/register", {
+        const res = await fetch(`${API_BASE}/register`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ username, password, inviteCode }),
@@ -57,6 +59,7 @@ export default function RegisterModal({ onClose, onRegisterSuccess }) {
                         required
                     />
                     <input
+                        type="password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="Password"

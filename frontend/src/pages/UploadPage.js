@@ -3,6 +3,8 @@ import { toast } from "react-toastify";
 
 import { useAuth } from "../contexts/AuthContext";
 
+import { API_BASE } from "../api";
+
 export default function UploadPage() {
     const [file, setFile] = useState(null);
     const [category, setCategory] = useState("genomic");
@@ -19,7 +21,7 @@ export default function UploadPage() {
 
         let data = null;
         try {
-          const uploadFastaResponse = await fetch("http://localhost:5000/upload", {
+          const uploadFastaResponse = await fetch(`${API_BASE}/upload`, {
             method: "POST",
             headers: {
               Authorization: `Bearer ${token}`,
@@ -46,7 +48,7 @@ export default function UploadPage() {
         }
 
         try {
-          const analyzeFastaResponse = await fetch("http://localhost:5000/analyze-fasta", {
+          const analyzeFastaResponse = await fetch(`${API_BASE}/analyze-fasta`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",

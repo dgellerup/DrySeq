@@ -4,10 +4,11 @@ import { toast } from "react-toastify";
 import { useAuth } from "../contexts/AuthContext";
 
 import "./AnalyzePage.css";
+import { API_BASE } from "../api";
 
 export default function PCRPage() {
     const [pcrAnalysisName, setpcrAnalysisName] = useState("");
-    const [cyclesCount, setCyclesCount] = useState("");
+    const cyclesCount = 50;
 
     const [primerFiles, setPrimerFiles] = useState([]);
     const [referenceFiles, setReferenceFiles] = useState([]);
@@ -21,7 +22,7 @@ export default function PCRPage() {
     useEffect(() => {
         const fetchFiles = async () => {
             try {
-                const res = await fetch("http://localhost:5000/fasta-files", {
+                const res = await fetch(`${API_BASE}/fasta-files`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
 
@@ -48,51 +49,78 @@ export default function PCRPage() {
         }
     }, [token]);
 
-        const handleAnalyze = async (event) => {
-            event.preventDefault();
-    
-            if (!primerFile || !referenceFile || !pcrAnalysisName || !cyclesCount) {
-                alert("Please fill in all fields.");
+    const handleAnalyze = async (event) => {
+        event.preventDefault();
+
+        if (!primerFile || !referenceFile || !pcrAnalysisName || !cyclesCount) {
+            alert("Please fill in all fields.");
+            return;
+        }
+
+        setLoading(true);
+
+        let data = null;
+        try {
+            const res = await fetch(`${API_BASE}/run-pcr`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    primerFileId: primerFile,
+                    referenceFileId: referenceFile,
+                    pcrAnalysisName: pcrAnalysisName,
+                    cyclesCount: cyclesCount,
+                }),
+            });
+
+            if (!res.ok) {
+                const errorText = await res.text();
+                throw new Error(errorText || "Analysis request failed");
+            }
+
+            data = await res.json();
+
+            toast.info(
+                <div>
+                    {data.message} <br /> {data.sampleName}
+                </div>
+                )
+
+        } catch (err) {
+            const errorMsg = `PCR Run Failed - ${err.message}`;
+            toast.info(errorMsg);
+        } finally {
+            setLoading(false);
+        }
+
+        try {
+            const analyzePcrResponse = await fetch(`${API_BASE}/analyze-fasta`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ fileId: data.file.id }),
+            });
+
+            if (!analyzePcrResponse.ok) {
+                const analyzeErrData = await analyzePcrResponse.json();
+                const errorMsg = analyzeErrData.error || "Processing FASTA failed";
+                toast.info(errorMsg);
                 return;
             }
-    
-            setLoading(true);
-    
-            try {
-                const res = await fetch("http://localhost:5000/run-pcr", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${token}`,
-                    },
-                    body: JSON.stringify({
-                        primerFileId: primerFile,
-                        referenceFileId: referenceFile,
-                        pcrAnalysisName: pcrAnalysisName,
-                        cyclesCount: cyclesCount,
-                    }),
-                });
-    
-                if (!res.ok) {
-                    const errorText = await res.text();
-                    throw new Error(errorText || "Analysis request failed");
-                }
-    
-                const data = await res.json();
-    
-                toast.info(
-                    <div>
-                        {data.message} <br /> {data.sampleName}
-                    </div>
-                    )
-    
-            } catch (err) {
-                const errorMsg = `PCR Run Failed - ${err.message}`;
-                toast.info(errorMsg);
-            } finally {
-                setLoading(false);
-            }
-        };   
+
+            const message = `${data.filename} processed successfully.`;
+
+            toast.info(message);
+            
+        } catch (err) {
+            const errorMsg = "PCR Analysis: Could not connect to the server.";
+            toast.info(errorMsg);
+        }
+    };
 
 
 return (
@@ -113,7 +141,7 @@ return (
                         />
                     </div>
 
-                    <div>
+                    {/* <div>
                         <label>Number of Cycles (max 50):</label>
                         <input
                             type="number"
@@ -123,7 +151,7 @@ return (
                             onChange={(e) => setCyclesCount(parseInt(e.target.value))}
                             required
                         />
-                    </div>
+                    </div> */}
 
                     <div>
                         <label>Primer File:</label>
