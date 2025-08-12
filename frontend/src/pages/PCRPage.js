@@ -49,51 +49,76 @@ export default function PCRPage() {
         }
     }, [token]);
 
-        const handleAnalyze = async (event) => {
-            event.preventDefault();
-    
-            if (!primerFile || !referenceFile || !pcrAnalysisName || !cyclesCount) {
-                alert("Please fill in all fields.");
+    const handleAnalyze = async (event) => {
+        event.preventDefault();
+
+        if (!primerFile || !referenceFile || !pcrAnalysisName || !cyclesCount) {
+            alert("Please fill in all fields.");
+            return;
+        }
+
+        setLoading(true);
+
+        try {
+            const res = await fetch(`${API_BASE}/run-pcr`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    primerFileId: primerFile,
+                    referenceFileId: referenceFile,
+                    pcrAnalysisName: pcrAnalysisName,
+                    cyclesCount: cyclesCount,
+                }),
+            });
+
+            if (!res.ok) {
+                const errorText = await res.text();
+                throw new Error(errorText || "Analysis request failed");
+            }
+
+            const data = await res.json();
+
+            toast.info(
+                <div>
+                    {data.message} <br /> {data.sampleName}
+                </div>
+                )
+
+        } catch (err) {
+            const errorMsg = `PCR Run Failed - ${err.message}`;
+            toast.info(errorMsg);
+        } finally {
+            setLoading(false);
+        }
+
+        try {
+            const analyzePcrResponse = await fetch(`${API_BASE}/analyze-fasta`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ fileId: data.fileId }),
+            });
+
+            if (!analyzePcrResponse.ok) {
+                const analyzeErrData = await analyzePcrResponse.json();
+                const errorMsg = analyzeErrData.error || "Processing FASTA failed";
+                toast.info(errorMsg);
                 return;
             }
-    
-            setLoading(true);
-    
-            try {
-                const res = await fetch(`${API_BASE}/run-pcr`, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${token}`,
-                    },
-                    body: JSON.stringify({
-                        primerFileId: primerFile,
-                        referenceFileId: referenceFile,
-                        pcrAnalysisName: pcrAnalysisName,
-                        cyclesCount: cyclesCount,
-                    }),
-                });
-    
-                if (!res.ok) {
-                    const errorText = await res.text();
-                    throw new Error(errorText || "Analysis request failed");
-                }
-    
-                const data = await res.json();
-    
-                toast.info(
-                    <div>
-                        {data.message} <br /> {data.sampleName}
-                    </div>
-                    )
-    
-            } catch (err) {
-                const errorMsg = `PCR Run Failed - ${err.message}`;
-                toast.info(errorMsg);
-            } finally {
-                setLoading(false);
-            }
-        };   
+
+            const message = `${data.filename} processed successfully.`;
+
+            toast.info(message);
+        } catch (err) {
+            const errorMsg = "PCR Analysis: Could not connect to the server.";
+            toast.info(errorMsg);
+        }
+    };
 
 
 return (
