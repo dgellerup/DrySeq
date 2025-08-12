@@ -59,6 +59,7 @@ export default function PCRPage() {
 
         setLoading(true);
 
+        let data = null;
         try {
             const res = await fetch(`${API_BASE}/run-pcr`, {
                 method: "POST",
@@ -79,7 +80,7 @@ export default function PCRPage() {
                 throw new Error(errorText || "Analysis request failed");
             }
 
-            const data = await res.json();
+            data = await res.json();
 
             toast.info(
                 <div>
