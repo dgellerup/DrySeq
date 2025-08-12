@@ -670,11 +670,14 @@ app.post("/run-pcr", authenticateToken, async (req, res) => {
                             },
                         });
 
+                    const filename = path.basename(pcrCreate.path);
+                    
                     res.json({
                         message: "PCR file created successfully",
                         pcrAnalysisName: safeName,
                         file: pcrCreate,
                         path: result.pcr_path,
+                        filename: filename,
                     });
                 } catch (err) {
                     console.error("Database error:", err);
