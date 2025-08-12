@@ -55,9 +55,10 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-app.use('/api', (req, res, next) => {
-    req.url = req.url.replace(/^\/api/, '');
-    next();
+app.use((req, _res, next) => {
+  if (req.url === '/api') req.url = '/';
+  else if (req.url.startsWith('/api/')) req.url = req.url.slice(4);
+  next();
 });
 
 // Setup file uploads
@@ -367,8 +368,27 @@ async function deleteManyFromS3(s3Uris = []) {
   for (const [bucket, objects] of Object.entries(items)) {
     // DeleteObjects supports up to 1000 keys per call
     for (let i = 0; i < objects.length; i += 1000) {
-      const Chunk = objects.slice(i, i + 1000);
-      await s3.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: Chunk } }));
+      const chunk = objects.slice(i, i + 1000);
+      try {
+        const out = await s3.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: chunk, Quiet: false } }));
+        console.log('S3 DeleteObjects result', {
+            bucket,
+            deleted: out.Deleted?.map(d => d.Key) || [],
+            errors: out.Errors || [],
+        });
+
+        // Fallback: if any errors, try single deletes so you see which one fails
+        for (const err of out.Errors || []) {
+            try {
+                await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: err.Key }));
+                console.log('S3 single delete succeeded after batch error', err.Key);
+            } catch (e) {
+                console.warn('S3 single delete still failing', err.Key, e?.name, e?.message);
+            }
+        }
+      } catch (e) {
+        console.error('S3 DeleteObjects exception', bucket, e?.name, e?.message);
+      }
     }
   }
 }

@@ -100,40 +100,38 @@ def write_fastq_files(amplicons_dict: dict, sequence_count: int, output_s3_prefi
     overrun_base_probabilities = load_overrun_base_probabilities()
     gen_read_names = generate_read_name_generator()
     
-    with smart_open.open(r1_path, "wb") as r1_file, smart_open.open(r2_path, "wb") as r2_file:
-        with gzip.GzipFile(fileobj=r1_file, mode="wb") as r1_gz, gzip.GzipFile(fileobj=r2_file, mode="wb") as r2_gz:
-            with io.TextIOWrapper(r1_gz, encoding="utf-8", newline="") as r1_handle, io.TextIOWrapper(r2_gz, encoding="utf-8", newline="") as r2_handle:
-                for _ in range(sequence_count):
-                    amplicon = random.choice(list(amplicons_dict.values()))
-                    amplicon = amplicon.upper()
-                    r1_read_name, r2_read_name = gen_read_names()
+    with smart_open.open(r1_path, "wt") as r1_file, smart_open.open(r2_path, "wt") as r2_file:
+            for _ in range(sequence_count):
+                amplicon = random.choice(list(amplicons_dict.values()))
+                amplicon = amplicon.upper()
+                r1_read_name, r2_read_name = gen_read_names()
 
-                    if len(amplicon) >= 251:
-                        r1_seq = amplicon[:251]
-                        r1_qual = [round(x) for x in cycle_quality_stats[:251]]
-                    else:
-                        overrun_length = 251 - len(amplicon)
-                        r1_seq = Seq(amplicon + create_overrun_sequence(overrun_base_probabilities, overrun_length))
-                        r1_qual = [round(x) for x in cycle_quality_stats[:len(amplicon)]] + create_overrun_qualities(overrun_length)
+                if len(amplicon) >= 251:
+                    r1_seq = amplicon[:251]
+                    r1_qual = [round(x) for x in cycle_quality_stats[:251]]
+                else:
+                    overrun_length = 251 - len(amplicon)
+                    r1_seq = Seq(amplicon + create_overrun_sequence(overrun_base_probabilities, overrun_length))
+                    r1_qual = [round(x) for x in cycle_quality_stats[:len(amplicon)]] + create_overrun_qualities(overrun_length)
 
 
-                    if len(amplicon) >= 251:
-                        r2_seq = str(Seq(amplicon[-251:]).reverse_complement())
-                        r2_qual = [round(q) for q in cycle_quality_stats[:251]]
-                    else:
-                        overrun_length = 251 - len(amplicon)
-                        r2_raw = create_overrun_sequence(overrun_base_probabilities, overrun_length) + amplicon
-                        r2_seq = str(Seq(r2_raw[-251:]).reverse_complement())
-                        r2_qual = create_overrun_qualities(overrun_length) + [round(q) for q in cycle_quality_stats[:len(amplicon)]]
+                if len(amplicon) >= 251:
+                    r2_seq = str(Seq(amplicon[-251:]).reverse_complement())
+                    r2_qual = [round(q) for q in cycle_quality_stats[:251]]
+                else:
+                    overrun_length = 251 - len(amplicon)
+                    r2_raw = create_overrun_sequence(overrun_base_probabilities, overrun_length) + amplicon
+                    r2_seq = str(Seq(r2_raw[-251:]).reverse_complement())
+                    r2_qual = create_overrun_qualities(overrun_length) + [round(q) for q in cycle_quality_stats[:len(amplicon)]]
 
-                    r1_record = SeqRecord(r1_seq, id=r1_read_name, description="")
-                    r1_record.letter_annotations["phred_quality"] = r1_qual
+                r1_record = SeqRecord(r1_seq, id=r1_read_name, description="")
+                r1_record.letter_annotations["phred_quality"] = r1_qual
 
-                    r2_record = SeqRecord(r2_seq, id=r2_read_name, description="")
-                    r2_record.letter_annotations["phred_quality"] = r2_qual
+                r2_record = SeqRecord(r2_seq, id=r2_read_name, description="")
+                r2_record.letter_annotations["phred_quality"] = r2_qual
 
-                    SeqIO.write(r1_record, r1_handle, "fastq")
-                    SeqIO.write(r2_record, r2_handle, "fastq")
+                SeqIO.write(r1_record, r1_file, "fastq")
+                SeqIO.write(r2_record, r2_file, "fastq")
 
     return (r1_path, r2_path)
 
