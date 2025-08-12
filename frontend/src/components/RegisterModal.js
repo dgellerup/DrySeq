@@ -57,6 +57,7 @@ export default function RegisterModal({ onClose, onRegisterSuccess }) {
                         required
                     />
                     <input
+                        type="password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="Password"
