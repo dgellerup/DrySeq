@@ -58,10 +58,6 @@ model File {
   usedAsPrimerInPcr    PcrAnalysis[] @relation("PcrPrimerFile")
   usedAsReferenceInPcr PcrAnalysis[] @relation("PcrReferenceFile")
 
-  // Fastq relations via primer/reference (for UI)
-  primerAnalyses    FastqAnalysis[] @relation("PrimerFile")
-  referenceAnalyses FastqAnalysis[] @relation("ReferenceFile")
-
   @@unique([filename, userId])
 }
 
