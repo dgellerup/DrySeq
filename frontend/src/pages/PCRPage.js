@@ -4,6 +4,7 @@ import { toast } from "react-toastify";
 import { useAuth } from "../contexts/AuthContext";
 
 import "./AnalyzePage.css";
+import { API_BASE } from "../api";
 
 export default function PCRPage() {
     const [pcrAnalysisName, setpcrAnalysisName] = useState("");
@@ -21,7 +22,7 @@ export default function PCRPage() {
     useEffect(() => {
         const fetchFiles = async () => {
             try {
-                const res = await fetch("http://localhost:5000/fasta-files", {
+                const res = await fetch(`${API_BASE}/fasta-files`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
 
@@ -59,7 +60,7 @@ export default function PCRPage() {
             setLoading(true);
     
             try {
-                const res = await fetch("http://localhost:5000/run-pcr", {
+                const res = await fetch(`${API_BASE}/run-pcr`, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",

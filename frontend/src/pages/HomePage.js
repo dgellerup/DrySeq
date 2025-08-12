@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../contexts/AuthContext"; // assuming token there
+import { API_BASE } from "../api";
 
 export default function HomePage() {
     const { token } = useAuth();
@@ -9,7 +10,7 @@ export default function HomePage() {
 
     const fetchFastaFiles = async() => {
         try {
-            const res = await fetch("http://localhost:5000/fasta-files", {
+            const res = await fetch(`${API_BASE}/fasta-files`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json();
@@ -21,7 +22,7 @@ export default function HomePage() {
 
     const fetchFastqAnalyses = async() => {
         try {
-            const res = await fetch("http://localhost:5000/fastq-files", {
+            const res = await fetch(`${API_BASE}/fastq-files`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json();

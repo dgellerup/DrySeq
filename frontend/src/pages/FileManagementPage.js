@@ -6,6 +6,8 @@ import { Download, Trash2 } from "lucide-react";
 import ConfirmDialogModal from "../components/ConfirmDialogModal";
 import FastqAnalysisRow from "../components/FastqAnalysisRow";
 
+import { API_BASE } from "../api";
+
 import "./FileTable.css";
 
 export default function FileManagementPage() {
@@ -20,7 +22,7 @@ export default function FileManagementPage() {
 
     const fetchFastaFiles = useCallback(async() => {
         try {
-            const res = await fetch("http://localhost:5000/fasta-files", {
+            const res = await fetch(`${API_BASE}/fasta-files`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json();
@@ -32,7 +34,7 @@ export default function FileManagementPage() {
 
     const fetchFastqAnalyses = useCallback(async() => {
         try {
-            const res = await fetch("http://localhost:5000/fastq-files", {
+            const res = await fetch(`${API_BASE}/fastq-files`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json();
@@ -51,7 +53,7 @@ export default function FileManagementPage() {
     }, [token, fetchFastaFiles, fetchFastqAnalyses]);
 
 async function getPresignedUrl(id, token) {
-    const res = await fetch(`http://localhost:5000/download/${id}/url`, {
+    const res = await fetch(`${API_BASE}/download/${id}/url`, {
         headers: { Authorization: `Bearer ${token}` },
         credentials: "include",
     });
@@ -117,7 +119,7 @@ const handleDownload = async (fileId) => {
                 fastaFiles.find((f) => f.id === fileToDelete.id) ||
                 FastqAnalyses.find((f) => f.id === fileToDelete.id);
 
-            await fetch(`http://localhost:5000/delete/${fileToDelete.id}`, {
+            await fetch(`${API_BASE}/delete/${fileToDelete.id}`, {
                 method: "DELETE",
                 headers: { Authorization: `Bearer ${token}` },
             });
@@ -145,7 +147,7 @@ const handleDownload = async (fileId) => {
         if (!analysisToDelete) return;
 
         try {
-            await fetch(`http://localhost:5000/delete-fastq-analysis/${analysisToDelete.id}`, {
+            await fetch(`${API_BASE}/delete-fastq-analysis/${analysisToDelete.id}`, {
                 method: "DELETE",
                 headers: { Authorization: `Bearer ${token}` },
             });
