@@ -102,7 +102,7 @@ export default function PCRPage() {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${token}`,
                 },
-                body: JSON.stringify({ fileId: data.fileId }),
+                body: JSON.stringify({ fileId: data.file.id }),
             });
 
             if (!analyzePcrResponse.ok) {
