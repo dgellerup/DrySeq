@@ -695,16 +695,15 @@ app.post("/run-pcr", authenticateToken, async (req, res) => {
 });
 
 app.post("/create-fastq", authenticateToken, async (req, res) => {
-    const { primerFileId, referenceFileId, sampleName, sequenceCount, analysisName } = req.body;
+    const { pcrFileId, sampleName, sequenceCount, analysisName } = req.body;
     const userId = req.user?.userId;
 
     const existing = await prisma.fastqAnalysis.findUnique({
         where: {
-            userId_sampleName_primerFileId_referenceFileId_sequenceCount_analysisName: {
+            userId_sampleName_pcrFileId_sequenceCount_analysisName: {
                 userId,
                 sampleName,
-                primerFileId,
-                referenceFileId,
+                pcrFileId,
                 sequenceCount,
                 analysisName
             },
@@ -712,8 +711,7 @@ app.post("/create-fastq", authenticateToken, async (req, res) => {
         include: {
             fastqFileR1: true,
             fastqFileR2: true,
-            primerFile: true,
-            referenceFile: true,
+            pcrFile: true,
         },
     });
 
@@ -730,32 +728,25 @@ app.post("/create-fastq", authenticateToken, async (req, res) => {
     }
 
     try {
-        const [primerFile, referenceFile] = await Promise.all([
-            prisma.file.findFirst({
-                where: { id: primerFileId, userId },
-            }),
-            prisma.file.findFirst({
-                where: { id: referenceFileId, userId },
-            }),
-        ]);
+        const pcrFile = await prisma.file.findFirst({
+                where: { id: pcrFileId, userId },
+            });
 
-        if (!primerFile || !referenceFile) {
-            return res.status(404).json({ error: "Primer or reference file not found or not owned by user" });
+        if (!pcrFile) {
+            return res.status(404).json({ error: "PCR file not found or not owned by user" });
         }
 
         const safeName = sampleName?.replace(/[^a-zA-Z0-9_\-]/g, "").replace(/\.(fastq|fq)(\.gz)?$/i, "");
         
-        const primerPath = primerFile.path;
-        const referencePath = referenceFile.path;
+        const pcrPath = pcrFile.path;
         const outputS3Prefix = `s3://${USERDATA_BUCKET}/${userId}/fastq`
         const scriptPath = path.join(__dirname, "scripts", "create_fastq.py");
 
-        // create_fastq.py args: --primer_path, --reference_path, --output_s3_prefix, --sample_name, --sequence_count
+        // create_fastq.py args: --pcr_path, --output_s3_prefix, --sample_name, --sequence_count
 
         const args = [
             scriptPath,
-            "--primer_path", primerPath,
-            "--reference_path", referencePath,
+            "--pcr_path", pcrPath,
             "--output_s3_prefix", outputS3Prefix,
             "--sample_name", safeName,
             "--sequence_count", sequenceCount,
@@ -814,16 +805,14 @@ app.post("/create-fastq", authenticateToken, async (req, res) => {
                     await prisma.fastqAnalysis.create({
                         data: {
                             userId,
-                            primerFileId,
-                            referenceFileId,
+                            pcrFileId,
                             result: JSON.stringify(result),
                             analysisName,
                             sampleName,
                             sequenceCount,
                             fastqFileR1Id: fileR1.id,
                             fastqFileR2Id: fileR2.id,
-                            primerFilename: primerFile.filename,
-                            referenceFilename: referenceFile.filename
+                            pcrFilename: pcrFile.filename,
                         },
                     });
 

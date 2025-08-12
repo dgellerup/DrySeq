@@ -11,7 +11,6 @@ from pathlib import Path
 import boto3
 import smart_open
 
-import ahocorasick
 from Bio.SeqRecord import SeqRecord
 from Bio import SeqIO
 from Bio.Seq import Seq
@@ -21,8 +20,7 @@ def get_arguments() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--primer_path", required=True, type=str)
-    parser.add_argument("--reference_path", required=True, type=str)
+    parser.add_argument("--pcr_path", required=True, type=str)
     parser.add_argument("--output_s3_prefix", required=True, type=str)
     parser.add_argument("--sample_name", required=True, type=str)
     parser.add_argument("--sequence_count", required=True, type=int)
@@ -35,39 +33,6 @@ def parse_fasta(file_path: str) -> dict[str, str]:
         for record in SeqIO.parse(f_handle, "fasta"):
             records[record.id] = str(record.seq)
     return records
-
-def find_primer_locations(reference_seq: str, primer_sequences: dict) -> list[tuple[str, int]]:
-
-    A = ahocorasick.Automaton()
-    B = ahocorasick.Automaton()
-    for primer_name, primer_seq in primer_sequences.items():
-        reverse_comp_seq = str(Seq(primer_seq).reverse_complement())
-        A.add_word(primer_seq, (primer_name, primer_seq))
-        B.add_word(reverse_comp_seq, (primer_name, reverse_comp_seq))
-    A.make_automaton()
-    B.make_automaton()
-
-    forward_results = []
-    for end_index, (idx, primer) in A.iter(reference_seq):
-        start_index = end_index - len(primer) + 1
-        forward_results.append((idx, start_index))
-
-    reverse_results = [(idx, end_index)  for end_index, (idx, primer) in A.iter(reference_seq)]
-
-    return {
-        "forward_results": forward_results,
-        "reverse_results": reverse_results,
-    }
-
-def generate_artificial_amplicons(reference_sequences: dict[str, str], primer_sequences: dict[str, str]):
-    amplicons_dict = {}
-    for reference_name, reference_seq in reference_sequences.items():
-        primer_positions = find_primer_locations(reference_seq, primer_sequences)
-        for f_primer_name, f_primer_index in primer_positions["forward_results"]:
-            for r_primer_name, r_primer_index in primer_positions["reverse_results"]:
-                amplicon_seq = reference_seq[f_primer_index:r_primer_index]
-                amplicons_dict[f"{reference_name}_{f_primer_name}_{r_primer_name}"] = amplicon_seq
-    return amplicons_dict
 
 def load_cycle_stats() -> list[float]:
 
@@ -172,14 +137,11 @@ def write_fastq_files(amplicons_dict: dict, sequence_count: int, output_s3_prefi
 
     return (r1_path, r2_path)
 
-def create_fastq(primer_path: str, reference_path: str, output_s3_prefix: str, sample_name: str, sequence_count: int):
+def create_fastq(pcr_path: str, output_s3_prefix: str, sample_name: str, sequence_count: int):
     try:
 
-        primer_sequences = parse_fasta(primer_path)
-        reference_sequences = parse_fasta(reference_path)
-
-        amplicons_dict = generate_artificial_amplicons(reference_sequences, primer_sequences)
-
+        amplicons_dict = parse_fasta(pcr_path)
+       
         r1_path, r2_path = write_fastq_files(amplicons_dict, sequence_count, output_s3_prefix, sample_name)
 
         result = {"status": "success",
@@ -206,10 +168,9 @@ if __name__ == "__main__":
                 }
         print(json.dumps(result))
 
-    primer_path = args.primer_path
-    reference_path = args.reference_path
+    pcr_path = args.pcr_path
     output_s3_prefix = args.output_s3_prefix
     sample_name = args.sample_name
     sequence_count = args.sequence_count
 
-    create_fastq(primer_path, reference_path, output_s3_prefix, sample_name, sequence_count)
+    create_fastq(pcr_path, output_s3_prefix, sample_name, sequence_count)

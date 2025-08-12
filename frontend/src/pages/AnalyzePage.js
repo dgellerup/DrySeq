@@ -12,9 +12,8 @@ export default function AnalyzePage() {
     const [sampleName, setSampleName] = useState("");
     const [sequenceCount, setSequenceCount] = useState("");
 
-    const [primerFiles, setPrimerFiles] = useState([]);
-    const [referenceFiles, setReferenceFiles] = useState([]);
-    const [primerFile, setPrimerFile] = useState("");
+    const [pcrFiles, setPcrFiles] = useState([]);
+    const [pcrFile, setPcrFile] = useState("");
     const [referenceFile, setReferenceFile] = useState("");
     const [loading, setLoading] = useState("");
 
@@ -35,10 +34,9 @@ export default function AnalyzePage() {
 
                 const files = await res.json();
 
-                const primers = files.filter(file => file.category === "PRIMER");
-                const genomics = files.filter(file => file.category === "GENOMIC");
+                const pcrs = files.filter(file => file.category === "PCR");
 
-                setPrimerFiles(primers);
+                setPcrFiles(pcrs);
                 setReferenceFiles(genomics);
             } catch (err) {
                 console.error("Error fetching files:", err);
@@ -53,7 +51,7 @@ export default function AnalyzePage() {
     const handleAnalyze = async (event) => {
         event.preventDefault();
 
-        if (!primerFile || !referenceFile || !analysisName || !sampleName || !sequenceCount) {
+        if (!pcrFile || !analysisName || !sampleName || !sequenceCount) {
             alert("Please fill in all fields.");
             return;
         }
@@ -68,8 +66,7 @@ export default function AnalyzePage() {
                     Authorization: `Bearer ${token}`,
                 },
                 body: JSON.stringify({
-                    primerFileId: primerFile,
-                    referenceFileId: referenceFile,
+                    pcrFileId: pcrFile,
                     analysisName: analysisName,
                     sampleName: sampleName,
                     sequenceCount: sequenceCount,
@@ -138,30 +135,14 @@ return (
                     </div>
 
                     <div>
-                        <label>Primer File:</label>
+                        <label>PCR File:</label>
                         <select
-                            value={primerFile}
-                            onChange={(e) => setPrimerFile(parseInt(e.target.value))}
+                            value={pcrFile}
+                            onChange={(e) => setPcrFile(parseInt(e.target.value))}
                             className="analyze-select"
                         >
-                            <option value="" disabled hidden>Select Primer File</option>
-                            {primerFiles.map((file) => (
-                                <option key={file.id} value={file.id}>
-                                    {file.filename}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div>
-                        <label>Reference File:</label>
-                        <select
-                            value={referenceFile}
-                            onChange={(e) => setReferenceFile(parseInt(e.target.value))}
-                            className="analyze-select"
-                        >
-                            <option value="" disabled hidden>Select Reference File</option>
-                            {referenceFiles.map((file) => (
+                            <option value="" disabled hidden>Select PCR File</option>
+                            {pcrFiles.map((file) => (
                                 <option key={file.id} value={file.id}>
                                     {file.filename}
                                 </option>
