@@ -661,16 +661,17 @@ app.post("/run-pcr", authenticateToken, async (req, res) => {
                 }
 
                 try {
+                    const filename = path.basename(result.pcr_path);
+
                     const pcrCreate = await prisma.file.create({
                             data: {
-                                filename: safeName,
+                                filename: filename,
                                 path: result.pcr_path,
                                 category: FileCategory.PCR,
                                 userId,
                             },
                         });
 
-                    const filename = path.basename(pcrCreate.path);
                     
                     res.json({
                         message: "PCR file created successfully",
