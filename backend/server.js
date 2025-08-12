@@ -677,16 +677,19 @@ app.post("/run-pcr", authenticateToken, async (req, res) => {
                             userId,
                             pcrAnalysisName: safeName,
                             cyclesCount,
+
                             pcrFileId: pcrCreate.id,
-                            pcfFilename: pcrCreate.filename,
+                            pcrFilename: pcrCreate.filename,   // <-- correct key
+
                             primerFileId: primerFile.id,
                             primerFilename: primerFile.filename,
+
                             referenceFileId: referenceFile.id,
                             referenceFilename: referenceFile.filename,
+
                             result: JSON.stringify(result),
                         },
                     });
-
                     
                     res.json({
                         message: "PCR file created successfully",
