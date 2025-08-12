@@ -8,8 +8,14 @@ import "./LoginModal.css"; // reuse styles
 export default function RegisterModal({ onClose, onRegisterSuccess }) {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
-    const [inviteCode, setInviteCode] = useState("")
+    const [password2, setPassword2] = useState("");
+    const [inviteCode, setInviteCode] = useState("");
+
     const [error, setError] = useState("");
+
+    const bothTyped = password.length > 0 && password2.length > 0;
+    const passwordsMatch = bothTyped && password === password2;
+    const lineColor = !bothTyped ? "#6b7280" : passwordsMatch ? "green" : "crimson";
 
     const handleRegister = async (e) => {
         e.preventDefault();
@@ -65,6 +71,23 @@ export default function RegisterModal({ onClose, onRegisterSuccess }) {
                         placeholder="Password"
                         required
                     />
+                    
+                    <div className="form-row">
+                        <input
+                            type="password"
+                            value={password2}
+                            onChange={(e) => setPassword2(e.target.value)}
+                            placeholder="Confirm Password"
+                            required
+                            aria-invalid={bothTyped && !passwordsMatch}
+                            aria-describedby="pw-status"
+                        />
+
+                        <div id="pw-status" className={`hint ${passwordsMatch ? 'ok' : 'err'}`} aria-live="polite">
+                            {passwordsMatch ? "Passwords match" : "Passwords must match"}
+                        </div>
+                    </div>
+
                     <input
                         value={inviteCode}
                         onChange={(e) => setInviteCode(e.target.value)}
@@ -76,7 +99,7 @@ export default function RegisterModal({ onClose, onRegisterSuccess }) {
                         <button type="button" className="modal-cancel" onClick={onClose}>
                             Cancel
                         </button>
-                        <button type="submit" className="modal-login">Register</button>
+                        <button type="submit" className="modal-login" disabled={!passwordsMatch}>Register</button>
                     </div>
                 </form>
             </div>
