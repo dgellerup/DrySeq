@@ -59,7 +59,7 @@ Resources:
   FrontendBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: "dryseq-frontend-${AWS::AccountId}-${AWS::Region}"
+      BucketName: !Sub "dryseq-frontend-${AWS::AccountId}-${AWS::Region}"
       WebsiteConfiguration:
         IndexDocument: index.html
         ErrorDocument: index.html
@@ -85,7 +85,7 @@ Resources:
   UploadsBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: "dryseq-userdata-${AWS::AccountId}-${AWS::Region}"
+      BucketName: !Sub "dryseq-userdata-${AWS::AccountId}-${AWS::Region}"
       CorsConfiguration:
         CorsRules:
           - AllowedMethods: [GET, PUT]
@@ -145,6 +145,18 @@ Resources:
                 Condition:
                   StringEquals:
                     kms:ViaService: !Sub "ssm.${AWS::Region}.amazonaws.com"
+
+              - Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:ListStackResources
+                Resource: "*"
+
+              - Effect: Allow
+                Action:
+                  - rds:DescribeDBInstances
+                Resource: "*"
 
   EC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -233,12 +245,10 @@ Resources:
           # --- Log both stdout and stderr to a file for debugging ---
           exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
 
-          REGION=${AWS::Region}
-
           # --- System update and base tooling ---
           dnf -y update
           dnf -y remove nodejs || true
-          dnf -y install git python3 python3-pip jq awscli postgresql
+          dnf -y install git python3 python3-pip jq awscli postgresql17
 
           # --- Node.js 20 via NodeSource (Amazon Linux 2023) ---
           curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
@@ -257,21 +267,21 @@ Resources:
             --with-decryption \
             --query Parameter.Value \
             --output text \
-            --region "${REGION}")
+            --region ${AWS::Region})
 
           DB_PASS=$(aws secretsmanager get-secret-value \
             --secret-id dryseq/db/master \
             --query SecretString \
             --output text \
-            --region "${REGION}" | jq -r .password)
+            --region ${AWS::Region} | jq -r .password)
 
           # --- Write .env for the backend (mode 600; readable by ec2-user) ---
           cat > /home/ec2-user/DrySeq/backend/.env <<EOF
-          DATABASE_URL=postgresql://dryseqadmin:${DB_PASS}@${DrySeqDB.Endpoint.Address}:5432/dryseq?schema=public
-          AWS_REGION=${REGION}
+          DATABASE_URL=postgresql://dryseqadmin:$DB_PASS@${DrySeqDB.Endpoint.Address}:5432/dryseq?schema=public
+          AWS_REGION=${AWS::Region}
           USERDATA_BUCKET=${UploadsBucket}
-          FRONTEND_ORIGINS=http://${FrontendBucket}.s3-website-${REGION}.amazonaws.com,http://localhost:5173
-          JWT_SECRET=${JWT_SECRET}
+          FRONTEND_ORIGINS=http://${FrontendBucket}.s3-website-${AWS::Region}.amazonaws.com,http://localhost:5173
+          JWT_SECRET=$JWT_SECRET
           PORT=80
           EOF
           chown ec2-user:ec2-user /home/ec2-user/DrySeq/backend/.env
@@ -283,7 +293,6 @@ Resources:
           # --- Install backend deps & Prisma as ec2-user ---
           runuser -l ec2-user -c 'cd ~/DrySeq/backend && ( [ -f package-lock.json ] && npm ci || npm install )'
           runuser -l ec2-user -c 'cd ~/DrySeq/backend && npx prisma generate'
-          # For dev schemas: db push. For prod migrations, consider: npx prisma migrate deploy
           runuser -l ec2-user -c 'cd ~/DrySeq/backend && npx prisma db push'
 
           # --- Optional Python libs for PCR scripting ---
