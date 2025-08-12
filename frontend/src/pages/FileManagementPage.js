@@ -14,7 +14,7 @@ export default function FileManagementPage() {
     const { token } = useAuth();
 
     const [fastaFiles, setFastaFiles] = useState([]);
-    const [FastqAnalyses, setFastqAnalyses] = useState([]);
+    const [fastqAnalyses, setFastqAnalyses] = useState([]);
 
     const [fileToDelete, setFileToDelete] = useState(null);
     const [analysisToDelete, setAnalysisToDelete] = useState(null);
@@ -65,7 +65,7 @@ async function getPresignedUrl(id, token) {
 const handleDownload = async (fileId) => {
     try {
         const fastaFile = fastaFiles.find((f) => f.id === fileId);
-        const fastqAnalysis = FastqAnalyses.find((a) => a.id === fileId);
+        const fastqAnalysis = fastqAnalyses.find((a) => a.id === fileId);
 
         if (fastaFile) {
             // Single file download (FASTA)
@@ -116,8 +116,7 @@ const handleDownload = async (fileId) => {
 
         try {
             const file =
-                fastaFiles.find((f) => f.id === fileToDelete.id) ||
-                FastqAnalyses.find((f) => f.id === fileToDelete.id);
+                fastaFiles.find((f) => f.id === fileToDelete.id);
 
             await fetch(`${API_BASE}/delete/${fileToDelete.id}`, {
                 method: "DELETE",
@@ -127,12 +126,7 @@ const handleDownload = async (fileId) => {
             await fetchFastaFiles();
             await fetchFastqAnalyses();
 
-            
-            if (file) {
-                toast.info(`"${file.filename}" has been deleted.`);
-            } else {
-                toast.info(`File deleted.`);
-            }
+            toast.info(`"${file?.filename ?? "File"}" has been deleted.`)
             
         } catch (err) {
             console.error("Failed to delete file:", err);
@@ -147,13 +141,16 @@ const handleDownload = async (fileId) => {
         if (!analysisToDelete) return;
 
         try {
-            await fetch(`${API_BASE}/delete-fastq-analysis/${analysisToDelete.id}`, {
+            const res = await fetch(`${API_BASE}/delete-fastq-analysis/${analysisToDelete.id}`, {
                 method: "DELETE",
                 headers: { Authorization: `Bearer ${token}` },
             });
 
+            if (!res.ok) throw new Error(await res.text());
+
             toast.info("FASTQ analysis and files deleted.");
             await fetchFastqAnalyses();
+            await fetchFastaFiles();
         } catch (err) {
             console.error("Failed to delete analysis:", err);
             toast.error("Failed to delete FASTQ analysis.");
@@ -241,19 +238,14 @@ const handleDownload = async (fileId) => {
                         </tr>
                     </thead>
                     <tbody>
-                    
-                    <div className="fastq-list">
-
-                    </div>
-                    {analyses.map((analysis) => (
-                        <FastqAnalysisRow 
-                            key={analysis.id}
-                            analysis={analysis}
-                            onDelete={() => handleDeleteFastqClick(analysis.id)}
-                            onDownload={() => handleDownload(analysis.id)}
-                        />
-                        ))
-                    }
+                        {analyses.map((analysis) => (
+                            <FastqAnalysisRow 
+                                key={analysis.id}
+                                analysis={analysis}
+                                onDelete={() => handleDeleteFastqClick(analysis)}
+                                onDownload={() => handleDownload(analysis.id)}
+                            />
+                            ))}
                     </tbody>
                 </table>
             
@@ -264,15 +256,14 @@ const handleDownload = async (fileId) => {
     return (
         <div className="p-4">
             {renderFastasTable(fastaFiles)}
-            {renderFastqsTable(FastqAnalyses)}
+            {renderFastqsTable(fastqAnalyses)}
 
-            
             <ConfirmDialogModal
                 isOpen={confirmOpen}
                 onConfirm={
                     fileToDelete
-                        ? () => handleDeleteFile(fileToDelete.id)
-                        : () => handleDeleteAnalysis()
+                        ? handleDeleteFile
+                        : handleDeleteAnalysis
                     }
                 onCancel={() => {
                     setConfirmOpen(false);
@@ -282,7 +273,9 @@ const handleDownload = async (fileId) => {
                 message={
                     fileToDelete
                         ? `Are you sure you want to delete "${fileToDelete?.filename}"?`
-                        : `Are you sure you want to delete the FASTQ analysis for "${analysisToDelete?.fastqFileR1?.filename}" + "${analysisToDelete?.fastqFileR2?.filename}"?`
+                        : analysisToDelete
+                            ? `Are you sure you want to delete the FASTQ analysis for "${analysisToDelete.fastqFileR1?.filename}" + "${analysisToDelete.fastqFileR2?.filename}"?`
+                            : "Are you sure you want to delete this FASTQ analysis?"
                 }
             />
         </div>
