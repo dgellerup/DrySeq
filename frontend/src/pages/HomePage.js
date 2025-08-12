@@ -90,15 +90,14 @@ export default function HomePage() {
                 {fastqAnalyses.map((analysis) => (
                     <li key={analysis.id} className="border p-2 rounded">
                         <div>
-                            <strong>{analysis.sampleName}</strong> - {analysis.sequenceCount} reads
+                            <strong>{analysis.analysisName}</strong> - {analysis.sequenceCount} reads
                         </div>
                         <div className="text-sm text-gray-600">
                             R1: {analysis.fastqFileR1.filename}<br />
                             R2: {analysis.fastqFileR2.filename}<br />
                         </div>
                         <div className="text-sm text-gray-500 mt-1">
-                            Primer: {analysis.primerFilename}<br />
-                            Reference: {analysis.referenceFilename}
+                            PCR Input: {analysis.pcrFilename}<br />
                         </div>
                         <div className="text-xs text-gray-400 mt-1">
                             Created: {new Date(analysis.createdAt).toLocaleString()}
