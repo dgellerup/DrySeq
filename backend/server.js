@@ -672,6 +672,21 @@ app.post("/run-pcr", authenticateToken, async (req, res) => {
                             },
                         });
 
+                    await prisma.pcrAnalysis.create({
+                        data: {
+                            userId,
+                            pcrAnalysisName: safeName,
+                            cyclesCount,
+                            pcrFileId: pcrCreate.id,
+                            pcfFilename: pcrCreate.filename,
+                            primerFileId: primerFile.id,
+                            primerFilename: primerFile.filename,
+                            referenceFileId: referenceFile.id,
+                            referenceFilename: referenceFile.filename,
+                            result: JSON.stringify(result),
+                        },
+                    });
+
                     
                     res.json({
                         message: "PCR file created successfully",

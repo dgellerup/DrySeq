@@ -41,10 +41,10 @@ model File {
   userId     Int
   user       User         @relation(fields: [userId], references: [id])
 
-  // One-to-one FASTA analysis (sequence count)
+  // FASTA 1:1
   fastaAnalysis FastaAnalysis? @relation("FastaFile")
 
-  // FASTQ outputs (paired)
+  // FASTQ outputs (paired) 1:1 each
   fastqAnalysisR1 FastqAnalysis? @relation("FastqFileR1")
   fastqAnalysisR2 FastqAnalysis? @relation("FastqFileR2")
 
@@ -57,6 +57,10 @@ model File {
   // PCR inputs — backrefs from PcrAnalysis.primerFile / referenceFile
   usedAsPrimerInPcr    PcrAnalysis[] @relation("PcrPrimerFile")
   usedAsReferenceInPcr PcrAnalysis[] @relation("PcrReferenceFile")
+
+  // Fastq relations via primer/reference (for UI)
+  primerAnalyses    FastqAnalysis[] @relation("PrimerFile")
+  referenceAnalyses FastqAnalysis[] @relation("ReferenceFile")
 
   @@unique([filename, userId])
 }
@@ -119,10 +123,19 @@ model FastqAnalysis {
   fastqFileR2   File @relation("FastqFileR2", fields: [fastqFileR2Id], references: [id], onDelete: Cascade)
   fastqFileR2Id Int  @unique
 
-  // Input PCR file (the one you want to use)
-  pcrFile     File?  @relation("FastqFromPcr", fields: [pcrFileId], references: [id], onDelete: SetNull)
+  // If FASTQ came from a PCR output file:
   pcrFileId   Int?
+  pcrFile     File?  @relation("FastqFromPcr", fields: [pcrFileId], references: [id], onDelete: SetNull)
   pcrFilename String
+
+  // (For UI display) keep soft links to primer/reference too
+  primerFileId   Int?
+  primerFile     File?  @relation("PrimerFile", fields: [primerFileId], references: [id], onDelete: SetNull)
+  primerFilename String
+
+  referenceFileId   Int?
+  referenceFile     File?  @relation("ReferenceFile", fields: [referenceFileId], references: [id], onDelete: SetNull)
+  referenceFilename String
 
   result    String
   createdAt DateTime @default(now())
