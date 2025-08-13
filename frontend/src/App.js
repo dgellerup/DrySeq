@@ -9,6 +9,7 @@ import HomePage from "./pages/HomePage";
 import UploadPage from "./pages/UploadPage";
 import FileManagementPage from "./pages/FileManagementPage";
 import PCRPage from "./pages/PCRPage";
+import OverviewPage from "./pages/OverviewPage";
 
 import "react-toastify/dist/ReactToastify.css";
 
@@ -22,6 +23,14 @@ function App() {
             element={
               <Layout>
                 <HomePage />
+              </Layout>
+            }
+          />
+          <Route
+            path="/overview"
+            element={
+              <Layout>
+                <OverviewPage />
               </Layout>
             }
           />
