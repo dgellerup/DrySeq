@@ -38,6 +38,7 @@ export default function FileManagementPage() {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json();
+            console.log(data);
             setFastqAnalyses(data);
         } catch (err) {
              console.error("Failed to fetch FASTQ files:", err);
