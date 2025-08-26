@@ -183,9 +183,9 @@ export default function FileManagementPage() {
     }
 
     const getSequenceCount = (file) => {
-        
+        console.log(file);
         if (file.category === "GENOMIC" || file.category === "PRIMER" || file.category === "PCR") {
-            const match = file.fastaAnalysis?.result?.match(/Found (\d+) sequences/i);
+            const match = file.analysisResult?.match(/Found (\d+) sequences/i);
             return match ? parseInt(match[1], 10) : "N/A";
         }
         

@@ -644,29 +644,43 @@ app.get("/fasta-files", authenticateToken, async (req, res) => {
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const files = await prisma.file.findMany({
+    where: {
+        userId,
+        category: { in: [FileCategory.GENOMIC, FileCategory.PRIMER, FileCategory.PCR] },
+        deletedAt: null,
+    },
+    include: {
+        fastaAnalysis: true,
+        producedByPcr: true,
+        usedAsPrimerInPcr: {
+        include: {
+            pcrFile:       { select: { id: true, filename: true, deletedAt: true } },
+            primerFile:    { select: { id: true, filename: true } },
+            referenceFile: { select: { id: true, filename: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        },
+        usedAsReferenceInPcr: {
+        include: {
+            pcrFile:       { select: { id: true, filename: true, deletedAt: true } },
+            primerFile:    { select: { id: true, filename: true } },
+            referenceFile: { select: { id: true, filename: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        },
+        usedForFastq: {
         where: {
-            userId,
-            category: { in: [FileCategory.GENOMIC, FileCategory.PRIMER, FileCategory.PCR] },
-            deletedAt: null,
+            AND: [
+            { fastqFileR1: { deletedAt: null } },
+            { fastqFileR2: { deletedAt: null } },
+            ],
         },
         include: {
-            fastaAnalysis:true,
-            producedByPcr: true,
-            usedAsPrimerInPcr: true,
-            usedAsReferenceInPcr: true,
-            usedForFastq: {
-                where: {
-                    AND: [
-                        { fastqFileR1: { deletedAt: null } },
-                        { fastqFileR2: { deletedAt: null } },
-                    ],
-                },
-                include: {
-                    fastqFileR1: { select: { id: true, filename: true, deletedAt: true } },
-                    fastqFileR2: { select: { id: true, filename: true, deletedAt: true } },
-                },
-            },
+            fastqFileR1: { select: { id: true, filename: true, deletedAt: true } },
+            fastqFileR2: { select: { id: true, filename: true, deletedAt: true } },
         },
+        },
+    },
     });
 
     const filesWithAnalysis = files.map((file) => ({
