@@ -6,12 +6,13 @@ const jwt = require("jsonwebtoken");
 const path = require("path");
 const fs = require("fs");
 const archiver = require("archiver");
+const pLimit = require("p-limit");
 
 require("dotenv").config();
 
-const { PrismaClient, FileCategory } = require("@prisma/client");
+const { PrismaClient, FileCategory, DeletionReason } = require("@prisma/client");
 
-const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, DeleteObjectsCommand } = require("@aws-sdk/client-s3");
+const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, HeadObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
 const s3 = new S3Client({ region: process.env.AWS_REGION });
@@ -116,7 +117,100 @@ function normalizeFilename(name) {
   return spaced.replace(/[^a-z0-9._-]/g, "_");
 }
 
+function tombstoneName(orig) {
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    return `${orig}__deleted__${ts}`;
+}
+
+async function ensureS3ExistsOrTombstone({ prisma, s3, file }) {
+    if (!file.path || !file.path.startsWith("s3://")) return true;
+
+    const { bucket, key } = parseS3Uri(file.path);
+    if (!bucket || !key) return NONAME;
+
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 3000);
+
+    try {
+        const cmd = new HeadObjectCommand({ Bucket: bucket, Key: key});
+        await s3.send(cmd, { abortSignal: ac.signal });
+        return true; // exists
+    } catch (e) {
+        const http = e?.$metadata?.httpStatusCode;
+        const name = e?.name || e?.Code;
+
+        if (http === 301 || name === "AuthorizationHeaderMalformed") return false;
+
+        if (http === 404 || name === "NotFound" || name === "NoSuchKey") {
+            await prisma.file.updateMany({
+                where: { id: file.id, deletedAt: null },
+                data: { deletedAt: new Date(), deletionReason: DeletionReason.MISSING },
+            });
+            return false;
+        }
+        return false;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+function withTimeout(fn, msTimeout) {
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), msTimeout);
+    return fn(ac.signal).finally(() => clearTimeout(t));
+}
+
+async function reconcileUserS3(prisma, s3, userId) {
+    const days = 7;
+    const cutoff = new Date(Date.now() - (days) * 24 * 60 * 60 * 1000);
+    const files = await prisma.file.findMany({
+        where: { userId, deletedAt: null, uploadedAt: { lte: cutoff } },
+        select: { id: true, path: true, s3Bucket: true, s3Key: true },
+    });
+    if (!files.length) return { checked: 0, markedDeleted: 0 };
+
+    const limit = pLimit(5); // cap concurrency
+    let marked = 0;
+
+    await Promise.all(files.map(f => limit(async () => {
+        const isS3 = isS3Uri(f.path);
+        if (!isS3 && !f.s3Bucket && !f.s3Key) return;
+        
+        const bucket = f.s3Bucket ?? parseS3Uri(f.path).bucket;
+        const key = f.s3Key ?? parseS3Uri(f.path).key;
+        if (!bucket || !key) return;
+
+        try {
+            const cmd = new HeadObjectCommand({ Bucket: bucket, Key: key });
+            await withTimeout(signal => s3.send(cmd, {abortSignal: signal }), 3000);
+        } catch (e) {
+            const http = e?.$metadata?.httpStatusCode;
+            const name = e?.name || e?.Code;
+
+            if (http === 301 || name === "AuthorizationHeaderMalformed") {
+                console.warn("S3 region mismatch during reconciliation", bucket, key);
+                return;
+            }
+
+            if (http === 404 || name === "NotFound" || name === "NoSuchKey") {
+                await prisma.file.updateMany({
+                    where: {id: f.id, deletedAt: null },
+                    data: { deletedAt: new Date(), deletionReason: DeletionReason.LIFECYCLE },
+                });
+                marked += 1;
+            } else if (name === 'AbortError') {
+                console.warn("HEAD timed out for", bucket, key);
+            } else {
+                console.warn("HEAD fail for", bucket, key, e?.name || e);
+            }
+        }
+    })));
+
+    return { checked: files.length, markedDeleted: marked };
+}
+
 const isS3Uri = (p) => typeof p === 'string' && p.startsWith('s3://');
+
 function parseS3Uri(uri) {
     if (!isS3Uri(uri)) throw new Error('Not an S3 URI');
     const rest = uri.slice(5);
@@ -204,6 +298,13 @@ app.post("/login", async (req, res) => {
         );
 
         res.json({ token });
+
+        reconcileUserS3(prisma, s3, user.id)
+            .then(({ checked, markedDeleted }) => {
+                if (markedDeleted) console.log(`Reconciled user ${user.id}: ${markedDeleted}/${checked} missing`);
+            })
+            .catch(err => console.warn("Reconcile error", err));
+
     } catch (err) {
         console.error("Login error:", err);
         res.status(500).json({ error: "Internal server error" });
@@ -215,17 +316,17 @@ app.get("/files", authenticateToken, async (req, res) => {
         const userId = req.user.userId;
         
         const primer = await prisma.file.findMany({
-            where: { category: FileCategory.PRIMER, userId },
+            where: { category: FileCategory.PRIMER, userId, deletedAt: null },
             select: { id: true, filename: true }
         });
 
         const genomic = await prisma.file.findMany({
-            where: { category: FileCategory.GENOMIC, userId },
+            where: { category: FileCategory.GENOMIC, userId, deletedAt: null },
             select: { id: true, filename: true }
         });
 
         const pcr = await prisma.file.findMany({
-            where: { category: FileCategory.PCR, userId },
+            where: { category: FileCategory.PCR, userId, deletedAt: null },
             select: { id: true, filename: true}
         })
 
@@ -250,7 +351,7 @@ app.post("/upload", authenticateToken, upload.single("file"), validateCategory, 
     if (!["genomic", "primer"].includes(category)) return res.status(400).json({ error: "Invalid category." });
     if (/\.(exe|sh|js|bat)$/i.test(normalizedName)) return res.status(400).json({ error: "Disallowed file type" });
 
-    const existing = await prisma.file.findFirst({ where: { filename: normalizedName, userId } });
+    const existing = await prisma.file.findFirst({ where: { filename: normalizedName, userId, deletedAt: null } });
 
     if (existing) {
         // Upload should have been blocked but if racing clean up just-uploaded key
@@ -260,7 +361,7 @@ app.post("/upload", authenticateToken, upload.single("file"), validateCategory, 
     }
 
     const file_count = await prisma.file.count({
-        where: { userId, category: { in: [ FileCategory.PRIMER, FileCategory.GENOMIC] }, },
+        where: { userId, deletedAt: null, category: { in: [ FileCategory.PRIMER, FileCategory.GENOMIC] }, },
     });
 
     if ( file_count > 5 ) {
@@ -320,11 +421,16 @@ app.get("/download/:fileId/url", authenticateToken, async (req, res) => {
     const { fileId } = req.params;
 
     try {
-        const file = await prisma.file.findUnique({ where: { id: parseInt(fileId) } });
+        const file = await prisma.file.findFirst({ where: { id: parseInt(fileId), deletedAt: null } });
         if (!file) return res.status(404).json({ error: "File not found" });
 
         if (!isS3Uri(file.path)) {
             return res.json({ url: `${process.env.API_BASE_URL}/download/${fileId}`});
+        }
+
+        const ok = await ensureS3ExistsOrTombstone({ prisma, s3, file });
+        if (!ok) {
+            return res.status(410).json({ error: "File no longer available" });
         }
 
         const { bucket, key } = parseS3Uri(file.path);
@@ -358,7 +464,13 @@ app.get('/download-fastq/:analysisId/zip', authenticateToken, async (req, res) =
         }
 
         const files = [analysis.fastqFileR1, analysis.fastqFileR2].filter(Boolean);
-        if (files.length === 0) return res.status(404).json({ error: 'No FASTQ files' });
+        if (files.length === 0 || files.some(f => f.deletedAt)) return res.status(404).json({ error: 'FASTQ files deleted or unavailable' });
+
+        for (const f of files) {
+            if (f.deletedAt) return res.status(410).json({ error: 'FASTQ file deleted' });
+            const ok = await ensureS3ExistsOrTombstone({ prisma, s3, file: f });
+            if (!ok) return res.status(410).json({ error: 'FASTQ file deleted' });
+        }
 
         const zipName = `${analysis.analysisName || 'fastq'}_${analysis.id}.zip`;
         res.setHeader('Content-Type', 'application/zip');
@@ -436,7 +548,8 @@ app.delete("/delete/:fileId", authenticateToken, async (req, res) => {
   const { fileId } = req.params;
 
   try {
-    const file = await prisma.file.findUnique({ where: { id: Number(fileId) } });
+    const file = await prisma.file.findFirst({ where: { id: Number(fileId), deletedAt: null } });
+
     if (!file) return res.status(404).json({ error: "File not found" });
 
     const filePath = file.path;
@@ -448,7 +561,16 @@ app.delete("/delete/:fileId", authenticateToken, async (req, res) => {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
 
-    await prisma.file.delete({ where: { id: Number(fileId) } });
+    await prisma.file.update({
+        where: {
+            id: Number(fileId)
+        },
+        data: {
+            deletedAt: new Date(),
+            deletionReason: DeletionReason.USER,
+            filename: tombstoneName(file.filename),
+        }
+    });
 
     res.json({ message: "File deleted successfully" });
   } catch (err) {
@@ -471,18 +593,28 @@ app.delete("/delete-fastq-analysis/:id", authenticateToken, async (req, res) => 
       return res.status(404).json({ error: "Analysis not found" });
     }
 
-    const fileIdsToDelete = [analysis.fastqFileR1Id, analysis.fastqFileR2Id].filter(Boolean);
-    const paths = [analysis.fastqFileR1?.path, analysis.fastqFileR2?.path].filter(Boolean);
+    const filesToDelete = [analysis.fastqFileR1, analysis.fastqFileR2].filter(Boolean);
 
-    // 1) Remove analysis first (FK-safe)
-    await prisma.fastqAnalysis.delete({ where: { id: analysisId } });
+    await prisma.$transaction(async (tx) => {
+        await tx.fastqAnalysis.update({
+            where: { id: analysisId },
+            data: { deletedAt: new Date() },
+        });
 
-    // 2) Delete files from DB
-    if (fileIdsToDelete.length) {
-      await prisma.file.deleteMany({ where: { id: { in: fileIdsToDelete } } });
-    }
+        for (const f of filesToDelete) {
+            await tx.file.update({
+                where: { id: f.id },
+                data: {
+                    deletedAt: new Date(),
+                    deletionReason: DeletionReason.USER,
+                    filename: tombstoneName(f.filename),
+                },
+            });
+        }
+    });
 
     // 3) Delete physical objects (S3 or local)
+    const paths = file.map(f => f.path);
     const s3Uris = paths.filter(isS3Uri);
     const localPaths = paths.filter((p) => !isS3Uri(p));
 
@@ -509,11 +641,13 @@ app.delete("/delete-fastq-analysis/:id", authenticateToken, async (req, res) => 
 
 app.get("/fasta-files", authenticateToken, async (req, res) => {
     const userId = req.user?.userId;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const files = await prisma.file.findMany({
         where: {
             userId,
             category: { in: [FileCategory.GENOMIC, FileCategory.PRIMER, FileCategory.PCR] },
+            deletedAt: null,
         },
         include: {
             fastaAnalysis:true,
@@ -521,23 +655,32 @@ app.get("/fasta-files", authenticateToken, async (req, res) => {
             usedAsPrimerInPcr: true,
             usedAsReferenceInPcr: true,
             usedForFastq: {
+                where: {
+                    AND: [
+                        { fastqFileR1: { deletedAt: null } },
+                        { fastqFileR2: { deletedAt: null } },
+                    ],
+                },
                 include: {
-                    fastqFileR1: true,
-                    fastqFileR2: true,
+                    fastqFileR1: { select: { id: true, filename: true, deletedAt: true } },
+                    fastqFileR2: { select: { id: true, filename: true, deletedAt: true } },
                 },
             },
         },
     });
 
-    const filesWithAnalysis = files.map((file) => {
-
-        const analysisResult = file.fastaAnalysis?.result ?? null;
+    const filesWithAnalysis = files.map((file) => ({
+        id: file.id,
+        filename: file.filename,
+        category: file.category,
+        uploadedAt: file.uploadedAt,
         
-        return {
-            ...file,
-            analysisResult,
-        };
-    });
+        analysisResult: file.fastaAnalysis?.result ?? null,
+        producedByPcr: file.producedByPcr ?? null,
+        usedAsPrimerInPcr: file.usedAsPrimerInPcr,
+        usedAsReferenceInPcr: file.usedAsReferenceInPcr,
+        usedForFastq: file.usedForFastq,
+    }));
 
     res.json(filesWithAnalysis);
 });
@@ -545,24 +688,65 @@ app.get("/fasta-files", authenticateToken, async (req, res) => {
 app.get("/fastq-files", authenticateToken, async (req, res) => {
     const userId = req.user?.userId;
 
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
     const analyses = await prisma.fastqAnalysis.findMany({
         where: {
             userId,
         },
         include: {
-            fastqFileR1: true,
-            fastqFileR2: true,
-            pcrFile: true,
+            fastqFileR1: { select: { id: true, filename: true, deletedAt: true } },
+            fastqFileR2: { select: { id: true, filename: true, deletedAt: true } },
+            pcrFile: { select: { id: true, filename: true, deletedAt: true } },
         },
     });
 
-    const hydrated = analyses.map((analysis) => ({
-        ...analysis,
-        pcrFilename: analysis.pcrFile
-            ? analysis.pcrFile.filename
-            : `${analysis.pcrFilename} (Deleted)`,
-        
-    }));
+    const hydrated = analyses.map((a) => {
+        const r1Deleted = !!a.fastqFileR1?.deletedAt;
+        const r2Deleted = !!a.fastqFileR2?.deletedAt;
+        const pcrDeleted = !!a.pcrFile?.deletedAt;
+
+        return {
+            id: a.id,
+            analysisName: a.analysisName,
+            sampleName: a.sampleName,
+            sequenceCount: a.sequenceCount,
+            createdAt: a.createdAt,
+
+            r1: a.fastqFileR1
+              ? {
+                    id: a.fastqFileR1.id,
+                    filename: a.fastqFileR1.filename,
+                    deleted: r1Deleted,
+                    displayName: r1Deleted
+                        ? `${a.fastqFileR1.filename} (Deleted)`
+                        : a.fastqFileR1.filename,
+                }
+            : null,
+
+            r2: a.fastqFileR2
+              ? {
+                    id: a.fastqFileR2.id,
+                    filename: a.fastqFileR2.filename,
+                    deleted: r2Deleted,
+                    displayName: r2Deleted
+                        ? `${a.fastqFileR2.filename} (Deleted)`
+                        : a.fastqFileR2.filename,
+                }
+            : null,
+
+            pcr: a.pcrFile
+              ? {
+                    id: a.pcrFile.id,
+                    filename: a.pcrFile.filename,
+                    deleted: pcrDeleted,
+                    displayName: pcrDeleted
+                        ? `${a.pcrFile.filename} (Deleted)`
+                        : a.pcrFile.filename,
+              }
+            : null,
+        };
+    });
 
     res.json(hydrated);
 })
@@ -573,7 +757,8 @@ app.post("/analyze-fasta", authenticateToken, async (req, res) => {
 
     try {
         const fastaFile = await prisma.file.findFirst({
-                where: { id: fastaFileId, userId },
+                where: { id: fastaFileId, userId, deletedAt: null },
+                select: { id: true, path: true },
         });
         console.log(fastaFile);
 
@@ -663,10 +848,12 @@ app.post("/run-pcr", authenticateToken, async (req, res) => {
     try {
         const [primerFile, referenceFile] = await Promise.all([
             prisma.file.findFirst({
-                where: { id: primerFileId, userId },
+                where: { id: primerFileId, userId, deletedAt: null },
+                select: { id: true, path: true, filename: true },
             }),
             prisma.file.findFirst({
-                where: { id: referenceFileId, userId },
+                where: { id: referenceFileId, userId, deletedAt: null },
+                select: { id: true, path: true, filename: true },
             }),
         ]);
 
@@ -804,7 +991,7 @@ app.post("/create-fastq", authenticateToken, async (req, res) => {
 
     try {
         const pcrFile = await prisma.file.findFirst({
-                where: { id: pcrFileId, userId },
+                where: { id: pcrFileId, userId, deletedAt: null },
             });
 
         if (!pcrFile) {
