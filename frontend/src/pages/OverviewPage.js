@@ -14,6 +14,7 @@ export default function HomePage() {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json();
+            console.log(data);
             setFastaFiles(data);
         } catch (err) {
             console.error("Failed to fetch FASTA files:", err);
@@ -26,6 +27,7 @@ export default function HomePage() {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json();
+            console.log(data);
             setFastqAnalyses(data);
         } catch (err) {
              console.error("Failed to fetch FASTQ files:", err);
@@ -33,6 +35,7 @@ export default function HomePage() {
     }
 
     useEffect(() => {
+        console.log("HomePage effect; token present?", !!token, token?.slice?.(0,10));
         if (!token) {
             setFastaFiles([]);
             setFastqAnalyses([]);
@@ -61,15 +64,28 @@ export default function HomePage() {
                         <div className="text-sm text-gray-600">
                             Uploaded: {new Date(file.uploadedAt).toLocaleString()}
                         </div>
-                        {file.primerAnalyses?.length > 0 && (
+                        {file.usedAsPrimerInPcr?.length > 0 && (
                             <div className="mt-2">
                                 <strong>Used as Primer in:</strong>
                                 <ul className="ml-4 list-disc">
-                                    {file.primerAnalyses.map((a) => (
+                                    {file.usedAsPrimerInPcr.map((a) => (
                                         <li key={a.id}>
-                                            {a.sampleName}: vs {a.fastqFileR1.filename} + {a.fastqFileR2.filename}
+                                            {a.pcrAnalysisName ?? "(unnamed)"} - PCR: {a.pcrFile?.filename ?? "(output missing)"} - Ref: {a.referenceFile?.filename ?? "(missing)"}
                                         </li>
                                     ))}
+                                </ul>
+                            </div>
+                        )}
+
+                        {file.usedAsReferenceInPcr?.length > 0 && (
+                            <div className="mt-2">
+                                <strong>Used as Reference in:</strong>
+                                <ul className="ml-4 list-disc">
+                                {file.usedAsReferenceInPcr.map(a => (
+                                    <li key={a.id}>
+                                        {a.pcrAnalysisName ?? "(unnamed)"} — PCR: {a.pcrFile?.filename ?? "(output missing)"} — Primer: {a.primerFile?.filename ?? "(missing)"}
+                                    </li>
+                                ))}
                                 </ul>
                             </div>
                         )}
@@ -87,11 +103,11 @@ export default function HomePage() {
                             <strong>{analysis.analysisName}</strong> - {analysis.sequenceCount} reads
                         </div>
                         <div className="text-sm text-gray-600">
-                            R1: {analysis.fastqFileR1.filename}<br />
-                            R2: {analysis.fastqFileR2.filename}<br />
+                            R1: {analysis.r1?.filename ?? "(missing)"}<br />
+                            R2: {analysis.r2?.filename ?? "(missing)"}<br />
                         </div>
                         <div className="text-sm text-gray-500 mt-1">
-                            PCR Input: {analysis.pcrFilename}<br />
+                            PCR Input: {analysis.pcr.displayName ?? analysis.pcr?.filename ?? "(n/a)"}<br />
                         </div>
                         <div className="text-xs text-gray-400 mt-1">
                             Created: {new Date(analysis.createdAt).toLocaleString()}
