@@ -14,7 +14,6 @@ export default function HomePage() {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json();
-            console.log(data);
             setFastaFiles(data);
         } catch (err) {
             console.error("Failed to fetch FASTA files:", err);
@@ -27,7 +26,6 @@ export default function HomePage() {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json();
-            console.log(data);
             setFastqAnalyses(data);
         } catch (err) {
              console.error("Failed to fetch FASTQ files:", err);
@@ -35,7 +33,6 @@ export default function HomePage() {
     }
 
     useEffect(() => {
-        console.log("HomePage effect; token present?", !!token, token?.slice?.(0,10));
         if (!token) {
             setFastaFiles([]);
             setFastqAnalyses([]);
