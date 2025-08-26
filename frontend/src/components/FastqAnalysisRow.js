@@ -49,13 +49,13 @@ const FastqAnalysisRow = ({ analysis, onDelete, onDownload }) => {
           <td colSpan={3} className="p-4">
             <div className="text-sm space-y-1">
               <div>
-                <strong>R1 File:</strong> {analysis.fastqFileR1?.filename}
+                <strong>R1 File:</strong> {analysis.r1?.filename ?? "(missing)"}
               </div>
               <div>
-                <strong>R2 File:</strong> {analysis.fastqFileR2?.filename}
+                <strong>R2 File:</strong> {analysis.r2?.filename ?? "(missing)"}
               </div>
               <div>
-                <strong>PCR File:</strong> {analysis.pcrFilename}
+                <strong>PCR File:</strong> {analysis.pcr?.filename ?? "(missing)"}
               </div>
               <div>
                 <strong>Created:</strong>{" "}
