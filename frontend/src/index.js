@@ -4,6 +4,24 @@ import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 
+// Suppress the noisy ResizeObserver loop error in dev
+if (typeof window !== "undefined") {
+  const resizeObserverErr = (e) =>
+    e.message === "ResizeObserver loop completed with undelivered notifications.";
+
+  window.addEventListener("error", (e) => {
+    if (resizeObserverErr(e)) {
+      e.stopImmediatePropagation();
+    }
+  });
+
+  window.addEventListener("unhandledrejection", (e) => {
+    if (resizeObserverErr(e.reason)) {
+      e.stopImmediatePropagation();
+    }
+  });
+}
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>

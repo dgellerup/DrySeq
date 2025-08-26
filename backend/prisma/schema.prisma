@@ -32,6 +32,14 @@ enum FileCategory {
   PCR
 }
 
+enum DeletionReason {
+  NONE
+  LIFECYCLE   // deleted by S3 lifecycle
+  USER        // user-initiated
+  ADMIN       // admin/moderation
+  MISSING     // S3 said it's gone but we didn't request it (drift)
+}
+
 model File {
   id         Int          @id @default(autoincrement())
   filename   String
@@ -40,6 +48,16 @@ model File {
   uploadedAt DateTime     @default(now())
   userId     Int
   user       User         @relation(fields: [userId], references: [id])
+
+  //- soft-delete fields
+  deletedAt       DateTime?
+  deletionReason  DeletionReason  @default(NONE)
+
+  //- optional S3 metadata to aid reconciliation/dedup/debug
+  s3Bucket    String?
+  s3Key       String?
+  etag        String?
+  sizeBytes   BigInt?
 
   // FASTA 1:1
   fastaAnalysis FastaAnalysis? @relation("FastaFile")
@@ -124,8 +142,9 @@ model FastqAnalysis {
   pcrFile     File?  @relation("FastqFromPcr", fields: [pcrFileId], references: [id], onDelete: SetNull)
   pcrFilename String
 
-  result    String
-  createdAt DateTime @default(now())
+  result      String
+  createdAt   DateTime @default(now())
+  deletedAt   DateTime?
 
   @@unique([userId, sampleName, pcrFileId, sequenceCount, analysisName])
 }

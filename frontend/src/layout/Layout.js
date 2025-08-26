@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Home, File, Upload, Dna, Binary } from "lucide-react";
+import { Home, File, Upload, Dna, Binary, LayoutDashboard } from "lucide-react";
 import "./Layout.css";
 import LoginModal from "../components/LoginModal";
 import { useAuth } from "../contexts/AuthContext";
@@ -40,9 +40,13 @@ export default function Layout({ children }) {
                         <Home size={18} style={{ marginRight: "8px" }} />
                         Home
                     </Link>
+                    <Link to="/overview" className={`sidebar-link ${currentPath === "/overview" ? "active" : ""}`}>
+                        <LayoutDashboard size={18} style={{ marginRight: "8px" }} />
+                        Overview
+                    </Link>
                     <Link to="/file-management" className={`sidebar-link ${currentPath === "/file-management" ? "active" : ""}`}>
                         <File size={18} style={{ marginRight: "8px" }} />
-                        File Management
+                        Files
                     </Link>
                     <Link to="/upload" className={`sidebar-link ${currentPath === "/upload" ? "active" : ""}`}>
                         <Upload size={18} style={{ marginRight: "8px" }} />
