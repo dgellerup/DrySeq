@@ -27,16 +27,6 @@ if (!JWT_SECRET || JWT_SECRET.length < 32) {
 
 const USERDATA_BUCKET = process.env.USERDATA_BUCKET;
 
-const rateLimit = require("express-rate-limit");
-
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requrests per windowMs
-    message: { error: "Too many requests from this IP, please try again later."}
-});
-
-app.use(limiter);
-
 // Enable CORS and JSON parsing
 const origins = (process.env.FRONTEND_ORIGINS || '')
   .split(',')
@@ -55,6 +45,18 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+
+const rateLimit = require("express-rate-limit");
+
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requrests per windowMs
+    message: { error: "Too many requests from this IP, please try again later."}
+});
+
+app.use(limiter);
+
+
 app.use(express.json());
 
 app.use((req, _res, next) => {

@@ -12,6 +12,16 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: DrySeq Infra - Frontend, Uploads, EC2 backend, RDS DB
 
 Parameters:
+  Stage:
+    Type: String
+    AllowedValues: [dev, prod]
+    Default: dev
+
+  AdminCidrIp:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: Your IP/CIDR for SSH (e.g., 203.0.113.10/32)
+
   KeyPairName:
     Description: Name of an existing EC2 KeyPair for SSH access
     Type: AWS::EC2::KeyPair::KeyName
@@ -32,6 +42,38 @@ Parameters:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
 
+  UseExistingBuckets:
+    Type: String
+    AllowedValues: [true, false]
+    Default: false
+    Description: If true, do not create S3 buckets; use the names below.
+
+  ExistingFrontendBucketName:
+    Type: String
+    Default: ""
+    Description: Name of an existing Frontend bucket (required if UseExistingBuckets=true)
+
+  ExistingUploadsBucketName:
+    Type: String
+    Default: ""
+    Description: Name of an existing Uploads bucket (required if UseExistingBuckets=true)
+
+Mappings:
+  StageConfig:
+    dev:
+      DbInstanceClass: db.t3.micro
+      AllocatedStorage: "20"
+      BackupRetention: "1"
+      DeletionProtection: "false"
+    prod:
+      DbInstanceClass: db.t3.micro
+      AllocatedStorage: "50"
+      BackupRetention: "7"
+      DeletionProtection: "true"
+
+Conditions:
+  CreateBuckets: !Equals [ !Ref UseExistingBuckets, "false"]
+
 Resources:
 
   # === Secrets ===
@@ -39,7 +81,7 @@ Resources:
   DrySeqDbMasterSecret:
     Type: AWS::SecretsManager::Secret
     Properties:
-      Name: dryseq/db/master
+      Name: !Sub "dryseq/db/${Stage}"
       GenerateSecretString:
         SecretStringTemplate: '{"username":"dryseqadmin"}'
         GenerateStringKey: password
@@ -57,6 +99,7 @@ Resources:
   # === S3 Buckets ===
 
   FrontendBucket:
+    Condition: CreateBuckets
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub "dryseq-frontend-${AWS::AccountId}-${AWS::Region}"
@@ -70,6 +113,7 @@ Resources:
         RestrictPublicBuckets: false
 
   FrontendBucketPolicy:
+    Condition: CreateBuckets
     Type: AWS::S3::BucketPolicy
     Properties:
       Bucket: !Ref FrontendBucket
@@ -83,6 +127,7 @@ Resources:
             Resource: !Sub "${FrontendBucket.Arn}/*"
 
   UploadsBucket:
+    Condition: CreateBuckets
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub "dryseq-userdata-${AWS::AccountId}-${AWS::Region}"
@@ -98,20 +143,19 @@ Resources:
   EC2InstanceRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: dryseq-ec2-role
+      RoleName: !Sub "dryseq-${Stage}-ec2-role"   # <— add Stage here
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
           - Effect: Allow
-            Principal:
-              Service: ec2.amazonaws.com
+            Principal: { Service: ec2.amazonaws.com }
             Action: sts:AssumeRole
       Policies:
         - PolicyName: DrySeqUserdataAccess
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              # S3: app read/write in your userdata bucket
+              # S3 access (replace hardcoded ARNs with !If)
               - Effect: Allow
                 Action:
                   - s3:PutObject
@@ -120,42 +164,35 @@ Resources:
                   - s3:AbortMultipartUpload
                   - s3:ListBucket
                 Resource:
-                  - !Sub "${UploadsBucket.Arn}"
-                  - !Sub "${UploadsBucket.Arn}/*"
-
-              # Secrets Manager: read only the dryseq/* secrets
+                  - !If
+                    - CreateBuckets
+                    - !Sub "${UploadsBucket.Arn}"
+                    - !Sub "arn:aws:s3:::${ExistingUploadsBucketName}"
+                  - !If
+                    - CreateBuckets
+                    - !Sub "${UploadsBucket.Arn}/*"
+                    - !Sub "arn:aws:s3:::${ExistingUploadsBucketName}/*"
+              # Secrets / SSM / KMS / CFN / RDS (unchanged)
               - Effect: Allow
                 Action:
                   - secretsmanager:GetSecretValue
                   - secretsmanager:DescribeSecret
-                Resource:
-                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:dryseq/*"
-
-              # SSM Parameter Store: read only /dryseq/* parameters
+                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:dryseq/*"
               - Effect: Allow
-                Action:
-                  - ssm:GetParameter
-                  - ssm:GetParameters
-                Resource:
-                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/dryseq/*"
-
+                Action: [ ssm:GetParameter, ssm:GetParameters ]
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/dryseq/*"
               - Effect: Allow
                 Action: [ kms:Decrypt ]
                 Resource: "*"
-                Condition:
-                  StringEquals:
-                    kms:ViaService: !Sub "ssm.${AWS::Region}.amazonaws.com"
-
+                Condition: { StringEquals: { kms:ViaService: !Sub "ssm.${AWS::Region}.amazonaws.com" } }
               - Effect: Allow
                 Action:
                   - cloudformation:DescribeStacks
                   - cloudformation:DescribeStackResources
                   - cloudformation:ListStackResources
                 Resource: "*"
-
               - Effect: Allow
-                Action:
-                  - rds:DescribeDBInstances
+                Action: [ rds:DescribeDBInstances ]
                 Resource: "*"
 
   EC2InstanceProfile:
@@ -179,13 +216,13 @@ Resources:
   EC2SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow HTTP + SSH
+      GroupDescription: !Sub "DrySeq ${Stage} API SG"
       VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Ref AdminCidrIp
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
@@ -214,9 +251,12 @@ Resources:
       Engine: postgres
       EngineVersion: "17.5"
       MasterUsername: dryseqadmin
-      MasterUserPassword: '{{resolve:secretsmanager:dryseq/db/master:SecretString:password}}'
-      DBInstanceClass: db.t3.micro
-      AllocatedStorage: 20
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:dryseq/db/${Stage}:SecretString:password}}"
+      DBInstanceClass: !FindInMap [StageConfig, !Ref Stage, DbInstanceClass]
+      AllocatedStorage: !FindInMap [StageConfig, !Ref Stage, AllocatedStorage]
+      BackupRetentionPeriod: !FindInMap [StageConfig, !Ref Stage, BackupRetention]
+      DeletionProtection: !FindInMap [StageConfig, !Ref Stage, DeletionProtection]
+      StorageType: gp3
       PubliclyAccessible: false
       DBSubnetGroupName: !Ref DrySeqDbSubnetGroup
       VPCSecurityGroups:
@@ -238,90 +278,99 @@ Resources:
       IamInstanceProfile: !Ref EC2InstanceProfile
       ImageId: !Ref AL2023Ami # Amazon Linux 2023 AMI (us-east-1)
       UserData:
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          set -euxo pipefail
-          exec > >(tee /var/log/user-data.log | logger -t user-data -s 2>/dev/console) 2>&1
+        Fn::Base64: 
+          !Sub 
+            - |
+              #!/bin/bash
+              set -euxo pipefail
+              exec > >(tee /var/log/user-data.log | logger -t user-data -s 2>/dev/console) 2>&1
 
-          REGION=${AWS::Region}
-          BACKEND_DIR=/home/ec2-user/DrySeq/backend
-          VENV_DIR="$BACKEND_DIR/.venv"
-          PYTHON_BIN="$VENV_DIR/bin/python"
+              REGION=${AWS::Region}
+              STAGE=${Stage}
+              BACKEND_DIR=/home/ec2-user/DrySeq/backend
+              VENV_DIR="$BACKEND_DIR/.venv"
+              PYTHON_BIN="$VENV_DIR/bin/python"
 
-          # ---------- ROOT: system packages ----------
-          dnf -y update
-          dnf -y remove nodejs || true
-          dnf -y install git python3 python3-pip jq awscli postgresql17 # psql client
-          curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
-          dnf -y install nodejs
-          npm install -g pm2
+              # ---------- ROOT: system packages ----------
+              dnf -y update
+              dnf -y remove nodejs || true
+              dnf -y install git python3 python3-pip jq awscli postgresql17
+              curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+              dnf -y install nodejs
+              npm install -g pm2
 
-          # ---------- ec2-user: get code ----------
-          runuser -l ec2-user -c '
-            cd ~
-            rm -rf DrySeq || true
-            git clone --branch main https://github.com/dgellerup/DrySeq.git
-          '
+              # ---------- ec2-user: get code ----------
+              runuser -l ec2-user -c '
+                cd ~
+                rm -rf DrySeq || true
+                git clone --branch main https://github.com/dgellerup/DrySeq.git
+              '
 
-          # ---------- ROOT: fetch secrets and write .env ----------
-          JWT_SECRET=$(aws ssm get-parameter \
-            --name /dryseq/jwt/secret \
-            --with-decryption \
-            --query Parameter.Value \
-            --output text \
-            --region "$REGION")
+              # ---------- ROOT: fetch secrets ----------
+              JWT_SECRET=$(aws ssm get-parameter \
+                --name /dryseq/${Stage}/jwt/secret \
+                --with-decryption \
+                --query Parameter.Value \
+                --output text \
+                --region "$REGION")
 
-          DB_PASS=$(aws secretsmanager get-secret-value \
-            --secret-id dryseq/db/master \
-            --query SecretString \
-            --output text \
-            --region "$REGION" | jq -r .password)
+              DB_PASS=$(aws secretsmanager get-secret-value \
+                --secret-id dryseq/db/${Stage} \
+                --query SecretString \
+                --output text \
+                --region "$REGION" | jq -r .password)
 
-          cat > "$BACKEND_DIR/.env" <<EOF
-          DATABASE_URL=postgresql://dryseqadmin:${DB_PASS}@${DrySeqDB.Endpoint.Address}:5432/dryseq?schema=public
-          AWS_REGION=${REGION}
-          USERDATA_BUCKET=${UploadsBucket}
-          FRONTEND_ORIGINS=http://${FrontendBucket}.s3-website-${REGION}.amazonaws.com,http://dryseq.com,http://www.dryseq.com,http://localhost:5173
-          JWT_SECRET=${JWT_SECRET}
-          PORT=80
-          PYTHON_BIN=${PYTHON_BIN}
-          EOF
-          chown ec2-user:ec2-user "$BACKEND_DIR/.env"
-          chmod 600 "$BACKEND_DIR/.env"
+              FRONTEND_BUCKET_NAME="${FrontendBucketName}"
+              USERDATA_BUCKET_NAME="${UploadsBucketName}"
 
-          # Allow node to bind to :80 (ignore if already set)
-          setcap 'cap_net_bind_service=+ep' "$(readlink -f "$(command -v node)")" || true
+              # ---------- ROOT: write .env ----------
+              cat > "$BACKEND_DIR/.env" <<EOF
+              DATABASE_URL=postgresql://dryseqadmin:$DB_PASS@${DrySeqDB.Endpoint.Address}:5432/dryseq?schema=public
+              AWS_REGION=${AWS::Region}
+              USERDATA_BUCKET=$USERDATA_BUCKET_NAME
+              FRONTEND_ORIGINS=http://$FRONTEND_BUCKET_NAME.s3-website-${AWS::Region}.amazonaws.com,http://localhost:5173
+              JWT_SECRET=$JWT_SECRET
+              PORT=80
+              PYTHON_BIN=$PYTHON_BIN
+              EOF
+              chown ec2-user:ec2-user "$BACKEND_DIR/.env"
+              chmod 600 "$BACKEND_DIR/.env"
 
-          # ---------- ec2-user: Python venv + deps ----------
-          runuser -l ec2-user -c "
-            cd '$BACKEND_DIR'
-            python3 -m venv .venv
-            source .venv/bin/activate
-            python -m pip install --upgrade pip wheel
-            # install ONLY your backend requirements (keep this file slim)
-            python -m pip install -r requirements.txt --no-cache-dir
-          "
+              # Allow node to bind to :80 (ignore if already set)
+              setcap 'cap_net_bind_service=+ep' "$(readlink -f "$(command -v node)")" || true
 
-          # ---------- ec2-user: Node deps + Prisma ----------
-          runuser -l ec2-user -c "
-            cd '$BACKEND_DIR'
-            [ -f package-lock.json ] && npm ci || npm install
-            npx prisma generate
-            npx prisma db push
-          "
+              # ---------- ec2-user: Python venv + deps ----------
+              runuser -l ec2-user -c "
+                cd '$BACKEND_DIR'
+                python3 -m venv .venv
+                source .venv/bin/activate
+                python -m pip install --upgrade pip wheel
+                python -m pip install -r requirements.txt --no-cache-dir
+              "
 
-          # ---------- ec2-user: start app under PM2 ----------
-          runuser -l ec2-user -c "
-            cd '$BACKEND_DIR'
-            pm2 start server.js --name dryseq-backend --update-env
-            pm2 save
-          "
+              # ---------- ec2-user: Node deps + Prisma ----------
+              runuser -l ec2-user -c "
+                cd '$BACKEND_DIR'
+                [ -f package-lock.json ] && npm ci || npm install
+                npx prisma generate
+                npx prisma migrate deploy
+              "
 
-          # ---------- ROOT: enable PM2 at boot for ec2-user ----------
-          pm2 startup systemd -u ec2-user --hp /home/ec2-user
+              # ---------- ec2-user: start app under PM2 ----------
+              runuser -l ec2-user -c "
+                cd '$BACKEND_DIR'
+                pm2 start server.js --name dryseq-$STAGE-backend --update-env
+                pm2 save
+              "
 
-          echo "UserData complete."
+              # ---------- ROOT: enable PM2 at boot ----------
+              pm2 startup systemd -u ec2-user --hp /home/ec2-user
 
+              echo "UserData complete."
+            - {
+              FrontendBucketName: !If [ CreateBuckets, !Ref FrontendBucket, !Ref ExistingFrontendBucketName ],
+              UploadsBucketName: !If [ CreateBuckets, !Ref UploadsBucket, !Ref ExistingUploadsBucketName ]
+            }
   
   DrySeqEIP:
     Type: AWS::EC2::EIP
@@ -338,7 +387,9 @@ Outputs:
 
   FrontendBucketURL:
     Description: URL to access the hosted React frontend
-    Value: !Sub "http://${FrontendBucket}.s3-website-${AWS::Region}.amazonaws.com"
+    Value: !Sub
+      - "http://${BucketName}.s3-website-${AWS::Region}.amazonaws.com"
+      - { BucketName: !If [ CreateBuckets, !Ref FrontendBucket, !Ref ExistingFrontendBucketName ] }
 
   EC2PublicIP:
     Description: IP address of the backend EC2 server
@@ -352,10 +403,12 @@ Outputs:
     Description: "Public IP address of DrySeq EC2 instance"
     Value: !Ref DrySeqEIP
     Export:
-      Name: DrySeq-InstancePublicIP
+      Name: !Sub "${AWS::StackName}-InstancePublicIP"
 
   FrontendBucketName:
-    Value: !Ref FrontendBucket
-  
+    Description: Effective frontend bucket name (created or existing)
+    Value: !If [ CreateBuckets, !Ref FrontendBucket, !Ref ExistingFrontendBucketName ]
+
   UploadsBucketName:
-    Value: !Ref UploadsBucket
+    Description: Effective uploads bucket name (created or existing)
+    Value: !If [ CreateBuckets, !Ref UploadsBucket, !Ref ExistingUploadsBucketName ]

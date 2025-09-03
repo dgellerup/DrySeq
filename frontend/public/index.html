@@ -1,6 +1,31 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <script>
+      (function () {
+        const shouldIgnore = (msg) =>
+          typeof msg === 'string' &&
+          (msg.includes('ResizeObserver loop completed with undelivered notifications') ||
+          msg.includes('ResizeObserver loop limit exceeded'));
+
+        // Silence console.error used by the overlay
+        const origError = console.error;
+        console.error = function (...args) {
+          if (args.some(a => shouldIgnore(a && a.toString()))) return;
+          return origError.apply(this, args);
+        };
+
+        // Also guard window error + unhandledrejection
+        window.addEventListener('error', (e) => {
+          if (shouldIgnore(e?.message)) e.stopImmediatePropagation();
+        }, true);
+
+        window.addEventListener('unhandledrejection', (e) => {
+          const msg = e?.reason?.message || e?.reason?.toString?.() || '';
+          if (shouldIgnore(msg)) e.stopImmediatePropagation();
+        }, true);
+      })();
+    </script>
     <meta charset="utf-8" />
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
